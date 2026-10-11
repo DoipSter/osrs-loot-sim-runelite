@@ -3,10 +3,13 @@ package com.osrslootsim;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
+import java.awt.geom.AffineTransform;
 import net.runelite.api.Client;
+import net.runelite.api.Model;
 import net.runelite.api.Perspective;
 import net.runelite.api.Player;
 import net.runelite.api.Point;
+import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
@@ -17,7 +20,7 @@ import net.runelite.client.ui.overlay.OverlayPosition;
 
 /**
  * What an insane drop in a simulated run gets: a card in the chatbox with the item, and a burst of light with a loot
- * beam on the player's character. Each has its own switch in the plugin's settings. Both last a few seconds and go by
+ * beam on the floor under the player's character, drawn behind the character. Each has its own switch in the plugin's settings. Both last a few seconds and go by
  * themselves.
  */
 final class DropPopups
@@ -146,10 +149,14 @@ final class DropPopups
 	}
 
 	/**
-	 * The burst of light and the loot beam, on the player's character.
+	 * The burst of light and the loot beam, on the floor under the player's character and behind it.
 	 */
 	private final class CharacterBurst extends Overlay
 	{
+		// Where the character's model lands on screen, corner by corner; kept between frames to spare the garbage
+		private int[] cornerX = new int[0];
+		private int[] cornerY = new int[0];
+
 		CharacterBurst()
 		{
 			setPosition(OverlayPosition.DYNAMIC);
@@ -167,19 +174,74 @@ final class DropPopups
 			}
 			Player me = client.getLocalPlayer();
 			LocalPoint at = me == null ? null : me.getLocalLocation();
-			if (at == null)
+			WorldView world = me == null ? null : me.getWorldView();
+			if (at == null || world == null)
 			{
 				return null;   // no character on screen (the login screen): nothing to burst from
 			}
-			Point feet = Perspective.localToCanvas(client, at, client.getPlane());
-			Point head = Perspective.localToCanvas(client, at, client.getPlane(), me.getLogicalHeight());
-			if (feet == null || head == null)
+			// The floor under the character: where it stands, and one tile east and one tile north of it at the same
+			// height, give the slant every circle on the floor is drawn with
+			int height = Perspective.getTileHeight(client, at, world.getPlane());
+			Point feet = Perspective.localToCanvas(client, at.getX(), at.getY(), height);
+			Point east = Perspective.localToCanvas(client, at.getX() + Perspective.LOCAL_TILE_SIZE, at.getY(), height);
+			Point north = Perspective.localToCanvas(client, at.getX(), at.getY() + Perspective.LOCAL_TILE_SIZE, height);
+			if (feet == null || east == null || north == null)
 			{
 				return null;
 			}
-			DropCard.paintBurst(graphics, feet.getX(), feet.getY(), head.getY(), client.getViewportYOffset(),
-				System.currentTimeMillis() - shownAt, opacity);
+			AffineTransform ground = new AffineTransform(east.getX() - feet.getX(), east.getY() - feet.getY(),
+				north.getX() - feet.getX(), north.getY() - feet.getY(), feet.getX(), feet.getY());
+			Rectangle view = new Rectangle(client.getViewportXOffset(), client.getViewportYOffset(), client.getViewportWidth(), client.getViewportHeight());
+			DropCard.paintBurstBehind(graphics, view, ground, feet.getX(), feet.getY(), System.currentTimeMillis() - shownAt, opacity,
+				sheet -> outline(sheet, me, at, world));
 			return null;
+		}
+
+		/**
+		 * Fills the character's shape on screen, face by face of its model, placed the way RuneLite's own outline
+		 * drawing places an actor's model. What it fills is wiped off the burst, which leaves the character in front.
+		 */
+		private void outline(Graphics2D sheet, Player me, LocalPoint at, WorldView world)
+		{
+			Model model = me.getModel();
+			if (model == null)
+			{
+				return;
+			}
+			int corners = model.getVerticesCount();
+			if (cornerX.length < corners)
+			{
+				cornerX = new int[corners];
+				cornerY = new int[corners];
+			}
+			int height = Perspective.getFootprintTileHeight(client, at, world.getPlane(), me.getFootprintSize()) - me.getAnimationHeightOffset();
+			Perspective.modelToCanvas(client, world, corners, at.getX(), at.getY(), height, me.getCurrentOrientation(),
+				model.getVerticesX(), model.getVerticesZ(), model.getVerticesY(), cornerX, cornerY);
+			int[] first = model.getFaceIndices1();
+			int[] second = model.getFaceIndices2();
+			int[] third = model.getFaceIndices3();
+			byte[] clear = model.getFaceTransparencies();
+			int[] xs = new int[3];
+			int[] ys = new int[3];
+			for (int face = 0; face < model.getFaceCount(); face++)
+			{
+				int a = first[face];
+				int b = second[face];
+				int c = third[face];
+				// Skipped: a face that is see-through, or has a corner behind the camera
+				if (a < 0 || b < 0 || c < 0 || a >= corners || b >= corners || c >= corners || clear != null && (clear[face] & 0xFF) >= 254
+					|| cornerX[a] == Integer.MIN_VALUE || cornerX[b] == Integer.MIN_VALUE || cornerX[c] == Integer.MIN_VALUE)
+				{
+					continue;
+				}
+				xs[0] = cornerX[a];
+				xs[1] = cornerX[b];
+				xs[2] = cornerX[c];
+				ys[0] = cornerY[a];
+				ys[1] = cornerY[b];
+				ys[2] = cornerY[c];
+				sheet.fillPolygon(xs, ys, 3);
+			}
 		}
 	}
 }

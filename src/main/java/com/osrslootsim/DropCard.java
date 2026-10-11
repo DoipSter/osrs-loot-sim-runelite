@@ -10,18 +10,22 @@ import java.awt.GradientPaint;
 import java.awt.Graphics2D;
 import java.awt.LinearGradientPaint;
 import java.awt.RadialGradientPaint;
+import java.awt.Rectangle;
 import java.awt.RenderingHints;
+import java.awt.Shape;
 import java.awt.font.TextAttribute;
 import java.awt.geom.AffineTransform;
+import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
 import java.awt.image.BufferedImage;
 import java.util.Collections;
+import java.util.function.Consumer;
 import net.runelite.client.ui.FontManager;
 
 /**
  * Draws what an insane drop gets, in the look of osrslootsim.com's own celebration. The card: charcoal with a brass
- * frame, the tier in orange capitals, the item and its name. The burst: a flash of light out of the character, a ring
- * racing over the ground, and a golden loot beam on a turning rune disc.
+ * frame, the tier in orange capitals, the item and its name. The burst: a flash of light across the floor from under
+ * the character, a ring racing outward, and a golden loot beam on a turning rune disc, all of it behind the character.
  */
 final class DropCard
 {
@@ -35,6 +39,12 @@ final class DropCard
 	private static final Color BRASS = new Color(164, 138, 91, 102);
 	private static final Font TITLE_FONT = capitals(19, 0.06f);
 	private static final Font NAME = FontManager.getRunescapeBoldFont();
+
+	// Sizes on the floor, in tiles from where the character stands: the rune disc, and how far the flash spreads
+	private static final double DISC = 0.95;
+	private static final float FLASH_REACH = 3.2f;
+	// The sheet the burst is drawn on before it goes over the game. Only the game's own thread draws.
+	private static BufferedImage sheet;
 
 	// The loot beam's lights climb it in a pattern that repeats every this many pixels: across (0 to 1), up (pixels)
 	private static final int MOTE_TILE = 260;
@@ -125,70 +135,112 @@ final class DropCard
 	}
 
 	/**
-	 * The burst on the character. footX, footY: where it stands on screen. headY: the top of its head. top: the top
-	 * edge of the game view, where the beam leaves the screen. age: milliseconds since the burst began; it drives
-	 * every movement.
+	 * Lays the burst over the game behind whatever stands in it. The burst is drawn onto a sheet of its own, cut then
+	 * wipes off the parts the character covers (it is handed the sheet, in the game's own coordinates, set up so
+	 * anything it fills is removed), and the sheet goes onto the game. view: the part of the screen the game world is
+	 * drawn in. ground: where one tile around the character lands on screen (see paintBurst).
 	 */
-	static void paintBurst(Graphics2D graphics, int footX, int footY, int headY, int top, long age, float opacity)
+	static void paintBurstBehind(Graphics2D target, Rectangle view, AffineTransform ground, int footX, int footY, long age, float opacity,
+		Consumer<Graphics2D> cut)
 	{
-		Graphics2D g = begin(graphics, opacity);
-		int body = Math.max(40, footY - headY);
-		int w = Math.max(34, Math.min(80, Math.round(body * 0.55f)));   // the beam's width follows the character's size
-		int middle = footY - body / 2;
+		double tileWide = Math.hypot(ground.getScaleX(), ground.getShearX());
+		double tileTall = Math.hypot(ground.getShearY(), ground.getScaleY());
+		int reachX = (int) Math.ceil(FLASH_REACH * tileWide) + 8;
+		int reachY = (int) Math.ceil(FLASH_REACH * tileTall) + 8;
+		Rectangle area = new Rectangle(footX - reachX, view.y, 2 * reachX, footY + reachY - view.y).intersection(view);
+		if (area.isEmpty())
+		{
+			return;
+		}
+		if (sheet == null || sheet.getWidth() < area.width || sheet.getHeight() < area.height)
+		{
+			sheet = new BufferedImage(Math.max(area.width, sheet == null ? 0 : sheet.getWidth()), Math.max(area.height, sheet == null ? 0 : sheet.getHeight()),
+				BufferedImage.TYPE_INT_ARGB_PRE);
+		}
+		Graphics2D s = sheet.createGraphics();
+		s.setComposite(AlphaComposite.Clear);
+		s.fillRect(0, 0, area.width, area.height);
+		s.setComposite(AlphaComposite.SrcOver);
+		s.setClip(0, 0, area.width, area.height);
+		s.translate(-area.x, -area.y);
+		s.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		paintBurst(s, ground, footX, footY, view.y, age);
+		s.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
+		s.setComposite(AlphaComposite.DstOut);
+		s.setColor(Color.BLACK);
+		cut.accept(s);
+		s.dispose();
+
+		Graphics2D g = begin(target, opacity);
+		g.drawImage(sheet, area.x, area.y, area.x + area.width, area.y + area.height, 0, 0, area.width, area.height, null);
+		g.dispose();
+	}
+
+	/**
+	 * The burst, on the floor under the character. ground turns a place on the floor, measured in tiles from where the
+	 * character stands, into its place on screen, so everything that lies on the floor (the flash, the pool of light,
+	 * the rune disc, the rings) lies as flat as the game's own floor does at this camera angle. footX, footY: where
+	 * the character stands on screen. top: the top edge of the game view, where the beam leaves the screen. age:
+	 * milliseconds since the burst began; it drives every movement.
+	 */
+	static void paintBurst(Graphics2D g, AffineTransform ground, int footX, int footY, int top, long age)
+	{
+		double tileWide = Math.hypot(ground.getScaleX(), ground.getShearX());
+		int w = (int) Math.max(22, Math.min(90, Math.round(tileWide * 0.62)));   // the beam is a little over half a tile wide
 		float swell = (float) (0.5 + 0.5 * Math.sin(age / 1200.0 * Math.PI));   // 0 to 1 and back every 2.4 s
-		AffineTransform flat = g.getTransform();
+		Graphics2D floor = (Graphics2D) g.create();
+		floor.transform(ground);
 
-		// A warm glow around the character, swelling and settling
-		float glowWide = w * 2.4f;
-		float glowTall = Math.max(body * 1.5f, 90f);
-		g.translate(footX, middle);
-		g.scale(1, glowTall / glowWide);
-		g.setPaint(new RadialGradientPaint(0, 0, glowWide, new float[]{0f, 0.72f, 1f},
-			new Color[]{gold(60 + 30 * swell), gold(0), gold(0)}));
-		g.fillOval(Math.round(-glowWide), Math.round(-glowWide), Math.round(2 * glowWide), Math.round(2 * glowWide));
-		g.setTransform(flat);
+		// The flash: light bursting out across the floor from under the character, gone in just over half a second
+		float burst = age / 600f;
+		if (burst < 1)
+		{
+			float reach = 0.4f + (FLASH_REACH - 0.4f) * ease(burst);
+			float bright = (float) Math.pow(1 - burst, 1.5);
+			floor.setPaint(new RadialGradientPaint(0, 0, reach, new float[]{0f, 0.28f, 0.76f, 1f},
+				new Color[]{new Color(255, 255, 255, Math.round(242 * bright)), new Color(255, 246, 216, Math.round(235 * bright)),
+					new Color(255, 210, 125, 0), new Color(255, 210, 125, 0)}));
+			floor.fill(new Ellipse2D.Float(-reach, -reach, 2 * reach, 2 * reach));
+		}
 
-		// The ground: a pool of light, the rune disc turning in it, and the ring at its heart
-		float lie = 0.26f;   // how flat a circle on the ground looks from the game's camera
-		g.translate(footX, footY);
-		g.scale(1, lie);
-		g.setPaint(new RadialGradientPaint(0, 0, w * 3f, new float[]{0f, 1f}, new Color[]{gold(107), gold(0)}));
-		g.fillOval(-w * 3, -w * 3, w * 6, w * 6);
-		g.setTransform(flat);
+		// A pool of light on the floor, swelling and settling
+		float pool = 1.9f + 0.2f * swell;
+		floor.setPaint(new RadialGradientPaint(0, 0, pool, new float[]{0f, 1f}, new Color[]{gold(110 + 20 * swell), gold(0)}));
+		floor.fill(new Ellipse2D.Float(-pool, -pool, 2 * pool, 2 * pool));
+		floor.dispose();
 
-		float disc = w * 1.4f;
-		Color line = new Color(255, 214, 110, 235);
+		// The rune disc turning on the floor, and the ring at its heart
 		g.setStroke(new BasicStroke(1.6f));
-		g.setColor(line);
-		oval(g, footX, footY, disc * 0.94f, lie);
-		oval(g, footX, footY, disc * 0.57f, lie);
+		g.setColor(new Color(255, 214, 110, 235));
+		g.draw(circle(ground, DISC * 0.94));
+		g.draw(circle(ground, DISC * 0.57));
 		double turn = age / 18000.0 * 2 * Math.PI;
 		for (int k = 0; k < 24; k++)
 		{
 			double a = turn + k * Math.PI / 12;
-			double near = k % 2 == 0 ? 0.66 : 0.74;
-			g.draw(new Line2D.Double(footX + Math.cos(a) * disc * near, footY + Math.sin(a) * disc * near * lie,
-				footX + Math.cos(a) * disc * 0.86, footY + Math.sin(a) * disc * 0.86 * lie));
+			double near = DISC * (k % 2 == 0 ? 0.66 : 0.74);
+			double far = DISC * 0.86;
+			g.draw(ground.createTransformedShape(new Line2D.Double(Math.cos(a) * near, Math.sin(a) * near, Math.cos(a) * far, Math.sin(a) * far)));
 		}
-		float ring = w * (0.7f + 0.03f * swell);
+		double ring = DISC * (0.44 + 0.02 * swell);
 		g.setStroke(new BasicStroke(5f));
 		g.setColor(new Color(255, 138, 31, 70));
-		oval(g, footX, footY, ring, lie);
+		g.draw(circle(ground, ring));
 		g.setStroke(new BasicStroke(2f));
 		g.setColor(new Color(254, 222, 122, 230));
-		oval(g, footX, footY, ring, lie);
+		g.draw(circle(ground, ring));
 
-		// One ring racing outward along the ground as the beam lands
+		// One ring racing outward along the floor as the beam lands
 		float raced = (age - 120) / 900f;
 		if (raced > 0 && raced < 1)
 		{
 			g.setStroke(new BasicStroke(3f));
 			g.setColor(new Color(255, 246, 216, Math.round(230 * (1 - raced))));
-			oval(g, footX, footY, w * (1.05f + 3f * ease(raced)), lie);
+			g.draw(circle(ground, DISC * (0.75 + 2.2 * ease(raced))));
 		}
 
-		// The beam shoots up in the first third of a second, then breathes. Brightest near the ground, fading as it
-		// climbs: drawn in bands, each with its own strength.
+		// The beam shoots up from the floor in the first third of a second, then breathes. Brightest near the floor,
+		// fading as it climbs: drawn in bands, each with its own strength.
 		float risen = ease(Math.min(1f, age / 320f));
 		int length = Math.max(1, footY - top);
 		int beamTop = footY - Math.round(length * risen);
@@ -197,7 +249,7 @@ final class DropCard
 		int halo = Math.round(w * 1.3f);
 		for (int y = beamTop; y < footY; y += 4)
 		{
-			float up = (float) (footY - y) / length;   // 0 at the ground, 1 at the top of the view
+			float up = (float) (footY - y) / length;   // 0 at the floor, 1 at the top of the view
 			float strength = (up < 0.05f ? up / 0.05f : up < 0.24f ? 1f : 1f - 0.45f * (up - 0.24f) / 0.76f) * breath;
 			Color none = new Color(255, 170, 30, 0);
 			Color amber = new Color(255, 170, 30, Math.round(97 * strength));
@@ -230,27 +282,17 @@ final class DropCard
 			}
 		}
 
-		// The white-hot bulb where the beam meets the ground
-		float bulb = w * 0.8f * risen;
-		if (bulb > 1)
+		// The white-hot foot of the beam, lying on the floor under the character
+		float foot = 0.42f * risen;
+		if (foot > 0.02f)
 		{
-			g.setPaint(new RadialGradientPaint(footX, footY - bulb * 0.5f, bulb, new float[]{0f, 0.3f, 0.55f, 1f},
+			Graphics2D lying = (Graphics2D) g.create();
+			lying.transform(ground);
+			lying.setPaint(new RadialGradientPaint(0, 0, foot, new float[]{0f, 0.35f, 0.6f, 1f},
 				new Color[]{Color.WHITE, Color.WHITE, new Color(255, 238, 160, 235), new Color(255, 196, 64, 0)}));
-			g.fillOval(Math.round(footX - bulb), Math.round(footY - bulb * 1.5f), Math.round(2 * bulb), Math.round(2 * bulb));
+			lying.fill(new Ellipse2D.Float(-foot, -foot, 2 * foot, 2 * foot));
+			lying.dispose();
 		}
-
-		// The flash: light bursting out of the character and gone in just over half a second
-		float burst = age / 600f;
-		if (burst < 1)
-		{
-			float reach = 30 + (Math.max(w * 4f, 220f) - 30) * ease(burst);
-			float bright = (float) Math.pow(1 - burst, 1.5);
-			g.setPaint(new RadialGradientPaint(footX, middle, reach, new float[]{0f, 0.28f, 0.76f, 1f},
-				new Color[]{new Color(255, 255, 255, Math.round(242 * bright)), new Color(255, 246, 216, Math.round(235 * bright)),
-					new Color(255, 210, 125, 0), new Color(255, 210, 125, 0)}));
-			g.fillOval(Math.round(footX - reach), Math.round(middle - reach), Math.round(2 * reach), Math.round(2 * reach));
-		}
-		g.dispose();
 	}
 
 	private static Color gold(float alpha)
@@ -258,12 +300,10 @@ final class DropCard
 		return new Color(255, 186, 60, Math.max(0, Math.min(255, Math.round(alpha))));
 	}
 
-	// A circle lying on the ground: wide as given, flattened by the camera's angle
-	private static void oval(Graphics2D g, int centreX, int centreY, float radius, float lie)
+	// A circle on the floor around the character, so many tiles in radius, as it looks on screen
+	private static Shape circle(AffineTransform ground, double radius)
 	{
-		int wide = Math.round(radius);
-		int tall = Math.round(radius * lie);
-		g.drawOval(centreX - wide, centreY - tall, 2 * wide, 2 * tall);
+		return ground.createTransformedShape(new Ellipse2D.Double(-radius, -radius, 2 * radius, 2 * radius));
 	}
 
 	// Fast at first, then settling

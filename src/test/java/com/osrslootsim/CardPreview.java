@@ -2,14 +2,17 @@ package com.osrslootsim;
 
 import java.awt.Color;
 import java.awt.Graphics2D;
+import java.awt.Rectangle;
+import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import javax.imageio.ImageIO;
 
 /**
  * Draws the insane-drop card and burst to a PNG without starting the game: the card on the left, then the burst at
- * five moments of its life on a stand-in character, on plain dark ground. Run it with "gradlew cardPreview" (see
- * build.gradle). Where they sit in the game is the overlays' business and needs the game to see.
+ * five moments of its life under a stand-in character, on plain dark ground. Run it with "gradlew cardPreview" (see
+ * build.gradle). Where they sit in the game, and the real character's outline, are the overlays' business and need
+ * the game to see.
  */
 public final class CardPreview
 {
@@ -33,24 +36,32 @@ public final class CardPreview
 			drop.picture = box;
 		}
 
-		int column = 230;
-		BufferedImage image = new BufferedImage(DropCard.WIDTH + 40 + column * MOMENTS.length, 360, BufferedImage.TYPE_INT_RGB);
+		int column = 300;
+		int height = 380;
+		BufferedImage image = new BufferedImage(DropCard.WIDTH + 40 + column * MOMENTS.length, height, BufferedImage.TYPE_INT_RGB);
 		Graphics2D g = image.createGraphics();
 		g.setColor(new Color(34, 40, 30));
 		g.fillRect(0, 0, image.getWidth(), image.getHeight());
-		DropCard.paintCard(g, 20, 110, drop, 1f);
+		DropCard.paintCard(g, 20, 120, drop, 1f);
 		for (int i = 0; i < MOMENTS.length; i++)
 		{
 			int footX = DropCard.WIDTH + 40 + column * i + column / 2;
-			int footY = 290;
-			int headY = 200;
-			// the stand-in character: a grey figure 90 pixels tall
+			int footY = 270;
+			int headY = 180;
+			// The stand-in character: a grey figure 90 pixels tall, standing on a floor seen from the game's usual
+			// angle (a tile 70 pixels wide and 30 deep)
 			g.setColor(new Color(120, 120, 120));
 			g.fillOval(footX - 9, headY, 18, 18);
 			g.fillRect(footX - 7, headY + 18, 14, 72);
-			DropCard.paintBurst(g, footX, footY, headY, 0, MOMENTS[i], 1f);
+			AffineTransform ground = new AffineTransform(70, 0, 0, -30, footX, footY);
+			Rectangle view = new Rectangle(DropCard.WIDTH + 40 + column * i, 0, column, height - 30);
+			DropCard.paintBurstBehind(g, view, ground, footX, footY, MOMENTS[i], 1f, cut ->
+			{
+				cut.fillOval(footX - 9, headY, 18, 18);
+				cut.fillRect(footX - 7, headY + 18, 14, 72);
+			});
 			g.setColor(new Color(200, 200, 200));
-			g.drawString(MOMENTS[i] + " ms", footX - 20, 345);
+			g.drawString(MOMENTS[i] + " ms", footX - 20, height - 10);
 		}
 		g.dispose();
 		File target = new File(out);
