@@ -1,0 +1,46 @@
+plugins {
+	id 'java'
+}
+
+repositories {
+	mavenLocal()
+	maven {
+		url = 'https://repo.runelite.net'
+		content {
+			includeGroupByRegex("net\\.runelite.*")
+		}
+	}
+	mavenCentral()
+}
+
+// Override with -PruneLiteVersion=x.y.z to build against a specific release
+def runeLiteVersion = project.findProperty('runeLiteVersion') ?: 'latest.release'
+
+dependencies {
+	compileOnly group: 'net.runelite', name: 'client', version: runeLiteVersion
+
+	testImplementation 'junit:junit:4.13.2'
+	testImplementation group: 'net.runelite', name: 'client', version: runeLiteVersion
+}
+
+group = 'com.osrslootsim'
+version = '1.0.0'
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+	options.release.set(11)
+}
+
+// Draws the side panel to a PNG without starting the game, for looking at layout changes:
+//   gradlew panelPreview -Pout=build/panel.png -Papi=http://127.0.0.1:8777 -Psite=../osrs-loot-sim
+// api: where the simulator answers. site: a checkout of the website, for stand-in item and boss pictures (optional).
+tasks.register('panelPreview', JavaExec) {
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.osrslootsim.PanelPreview'
+	jvmArgs '-Djava.awt.headless=true'
+	args = [
+		project.findProperty('out') ?: 'build/panel.png',
+		project.findProperty('api') ?: 'https://osrslootsim.com',
+		project.findProperty('site') ?: ''
+	]
+}

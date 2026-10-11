@@ -1,0 +1,10 @@
+.gradle/
+build/
+.idea/
+*.iml
+out/
+.DS_Store
+
+# Built jars stay in build/. A RuneLite client jar contains RuneLite and the game client, so it must never be committed.
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
