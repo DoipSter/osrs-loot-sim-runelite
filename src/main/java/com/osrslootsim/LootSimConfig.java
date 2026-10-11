@@ -30,13 +30,24 @@ public interface LootSimConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "insaneDropPopup",
+		keyName = "insaneDropCard",
 		name = "Insane drop pop-up",
-		description = "Where to show a pop-up when a simulated run has an insane drop: a collection log item rarer than 1/2,000, or anything worth 10m or more",
+		description = "Show the item in the chatbox when a simulated run has an insane drop: a collection log item rarer than 1/2,000, or anything worth 10m or more",
 		position = 3
 	)
-	default PopupPlace insaneDropPopup()
+	default boolean insaneDropCard()
 	{
-		return PopupPlace.CHAT;
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "insaneDropBurst",
+		name = "Insane drop loot beam",
+		description = "A burst of light and a golden loot beam on your character when a simulated run has an insane drop",
+		position = 4
+	)
+	default boolean insaneDropBurst()
+	{
+		return true;
 	}
 }

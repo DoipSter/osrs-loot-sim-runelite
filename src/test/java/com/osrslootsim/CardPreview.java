@@ -7,19 +7,20 @@ import java.io.File;
 import javax.imageio.ImageIO;
 
 /**
- * Draws the insane-drop pop-ups to a PNG without starting the game: the full card with its loot beam on the left, the
- * chatbox card on the right, on plain dark ground. Run it with "gradlew cardPreview" (see build.gradle). Where they
- * sit in the game is the overlays' business and needs the game to see.
+ * Draws the insane-drop card and burst to a PNG without starting the game: the card on the left, then the burst at
+ * five moments of its life on a stand-in character, on plain dark ground. Run it with "gradlew cardPreview" (see
+ * build.gradle). Where they sit in the game is the overlays' business and needs the game to see.
  */
 public final class CardPreview
 {
+	private static final long[] MOMENTS = {80, 250, 500, 1500, 3200};
+
 	public static void main(String[] args) throws Exception
 	{
 		String out = args.length > 0 ? args[0] : "build/cards.png";
 		String sprite = args.length > 1 ? args[1] : "";
 
-		DropCard.Drop drop = new DropCard.Drop("Draconic visage", "1/5,000", "3.22M gp", 0);
-		DropCard.Drop several = new DropCard.Drop("Twisted bow", "1/868", "1.49B gp", 3);
+		DropCard.Drop drop = new DropCard.Drop("Avernic defender hilt");
 		File file = new File(sprite);
 		if (file.isFile())
 		{
@@ -30,18 +31,27 @@ public final class CardPreview
 			b.drawImage(item, (36 - item.getWidth()) / 2, (32 - item.getHeight()) / 2, null);
 			b.dispose();
 			drop.picture = box;
-			several.picture = box;
 		}
 
-		BufferedImage image = new BufferedImage(620, 340, BufferedImage.TYPE_INT_RGB);
+		int column = 230;
+		BufferedImage image = new BufferedImage(DropCard.WIDTH + 40 + column * MOMENTS.length, 360, BufferedImage.TYPE_INT_RGB);
 		Graphics2D g = image.createGraphics();
 		g.setColor(new Color(34, 40, 30));
-		g.fillRect(0, 0, 620, 340);
-		DropCard.paintBeam(g, 150, 290, 0, 1f);
-		DropCard.paintLarge(g, 50, 40, drop, 1f);
-		DropCard.paintSmall(g, 330, 60, drop, 1f);
-		DropCard.paintSmall(g, 330, 130, several, 1f);
-		DropCard.paintSmall(g, 330, 200, new DropCard.Drop("Tumeken's shadow (uncharged)", "1/3,472", "1.21B gp", 12), 0.5f);
+		g.fillRect(0, 0, image.getWidth(), image.getHeight());
+		DropCard.paintCard(g, 20, 110, drop, 1f);
+		for (int i = 0; i < MOMENTS.length; i++)
+		{
+			int footX = DropCard.WIDTH + 40 + column * i + column / 2;
+			int footY = 290;
+			int headY = 200;
+			// the stand-in character: a grey figure 90 pixels tall
+			g.setColor(new Color(120, 120, 120));
+			g.fillOval(footX - 9, headY, 18, 18);
+			g.fillRect(footX - 7, headY + 18, 14, 72);
+			DropCard.paintBurst(g, footX, footY, headY, 0, MOMENTS[i], 1f);
+			g.setColor(new Color(200, 200, 200));
+			g.drawString(MOMENTS[i] + " ms", footX - 20, 345);
+		}
 		g.dispose();
 		File target = new File(out);
 		if (target.getParentFile() != null)

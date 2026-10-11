@@ -16,9 +16,9 @@ import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.ui.overlay.OverlayPosition;
 
 /**
- * The pop-up for an insane drop in a simulated run: a small card in the chatbox, or the full card with its loot beam
- * in front of the player's character, as the plugin's settings say (or neither). It shows for a few seconds and goes
- * by itself. The drop is a simulated one and the card says so.
+ * What an insane drop in a simulated run gets: a card in the chatbox with the item, and a burst of light with a loot
+ * beam on the player's character. Each has its own switch in the plugin's settings. Both last a few seconds and go by
+ * themselves.
  */
 final class DropPopups
 {
@@ -32,8 +32,8 @@ final class DropPopups
 	private final LootSimConfig config;
 	private final Icons icons;
 	private final OverlayManager overlayManager;
-	private final Overlay inChat = new ChatCard();
-	private final Overlay inWorld = new CharacterCard();
+	private final Overlay card = new ChatCard();
+	private final Overlay burst = new CharacterBurst();
 
 	// Set on the Swing thread when a run arrives, read on the game's thread every frame
 	private volatile DropCard.Drop drop;
@@ -49,38 +49,34 @@ final class DropPopups
 
 	void start()
 	{
-		overlayManager.add(inChat);
-		overlayManager.add(inWorld);
+		overlayManager.add(card);
+		overlayManager.add(burst);
 	}
 
 	void stop()
 	{
-		overlayManager.remove(inChat);
-		overlayManager.remove(inWorld);
+		overlayManager.remove(card);
+		overlayManager.remove(burst);
 		drop = null;
 	}
 
 	/**
-	 * A run arrived: shows its best insane drop, if it has one and pop-ups are on. The site marks which drops are
-	 * insane, by its own rule: a collection log item rarer than 1/2,000, or anything worth 10m or more apiece.
+	 * A run arrived: celebrates its best insane drop, if it has one and either switch is on. The site marks which
+	 * drops are insane, by its own rule: a collection log item rarer than 1/2,000, or anything worth 10m or more
+	 * apiece.
 	 */
 	void ran(LootSimApi.Run run)
 	{
-		if (config.insaneDropPopup() == PopupPlace.OFF)
+		if (!config.insaneDropCard() && !config.insaneDropBurst())
 		{
 			return;
 		}
 		LootSimApi.Item best = null;
-		int insane = 0;
 		for (LootSimApi.Item item : run.items)
 		{
-			if (INSANE.equals(item.tier))
+			if (INSANE.equals(item.tier) && (best == null || each(item) > each(best)))
 			{
-				insane++;
-				if (best == null || each(item) > each(best))
-				{
-					best = item;
-				}
+				best = item;
 			}
 		}
 		if (best == null)
@@ -88,7 +84,7 @@ final class DropPopups
 			return;
 		}
 		String name = Text.plain(best.name, 40);
-		DropCard.Drop shown = new DropCard.Drop(name, best.rate >= 1 ? Text.rate(best.rate) : "", Text.coins(each(best)), insane - 1);
+		DropCard.Drop shown = new DropCard.Drop(name);
 		icons.picture(best.id, name, picture -> shown.picture = picture);
 		shownAt = System.currentTimeMillis();
 		drop = shown;
@@ -100,7 +96,7 @@ final class DropPopups
 	}
 
 	/**
-	 * How solid the pop-up is right now, from 0 to 1; 0 once its time is up.
+	 * How solid the celebration is right now, from 0 to 1; 0 once its time is up.
 	 */
 	private float opacity()
 	{
@@ -118,7 +114,7 @@ final class DropPopups
 	}
 
 	/**
-	 * The one-line card, at the top of the chatbox.
+	 * The card, in the chatbox.
 	 */
 	private final class ChatCard extends Overlay
 	{
@@ -134,26 +130,27 @@ final class DropPopups
 		{
 			DropCard.Drop shown = drop;
 			float opacity = opacity();
-			if (shown == null || opacity <= 0 || config.insaneDropPopup() != PopupPlace.CHAT)
+			if (shown == null || opacity <= 0 || !config.insaneDropCard())
 			{
 				return null;
 			}
 			Widget chat = client.getWidget(InterfaceID.Chatbox.CHATAREA);
 			Rectangle area = chat == null || chat.isHidden() ? null : chat.getBounds();
-			// No chatbox to sit in (the login screen, a chatbox that is hidden): the bottom left corner of the game
+			// Left side of the chatbox, its bottom edge just inside the chatbox's own. No chatbox to sit in (the login
+			// screen, a chatbox that is hidden): the bottom left corner of the game.
 			int x = area == null ? 8 : area.x + 6;
-			int y = area == null ? client.getCanvasHeight() - DropCard.SMALL_HEIGHT - 40 : area.y + 6;
-			DropCard.paintSmall(graphics, x, y, shown, opacity);
+			int y = (area == null ? client.getCanvasHeight() - 30 : area.y + area.height - 6) - DropCard.HEIGHT;
+			DropCard.paintCard(graphics, x, Math.max(2, y), shown, opacity);
 			return null;
 		}
 	}
 
 	/**
-	 * The full card over the character's upper body, with the loot beam coming down to its feet.
+	 * The burst of light and the loot beam, on the player's character.
 	 */
-	private final class CharacterCard extends Overlay
+	private final class CharacterBurst extends Overlay
 	{
-		CharacterCard()
+		CharacterBurst()
 		{
 			setPosition(OverlayPosition.DYNAMIC);
 			setLayer(OverlayLayer.ABOVE_SCENE);
@@ -163,44 +160,25 @@ final class DropPopups
 		@Override
 		public Dimension render(Graphics2D graphics)
 		{
-			DropCard.Drop shown = drop;
 			float opacity = opacity();
-			if (shown == null || opacity <= 0 || config.insaneDropPopup() != PopupPlace.CHARACTER)
+			if (drop == null || opacity <= 0 || !config.insaneDropBurst())
 			{
 				return null;
 			}
-			int left = client.getViewportXOffset();
-			int top = client.getViewportYOffset();
-			int width = client.getViewportWidth();
-			int height = client.getViewportHeight();
-			if (width <= 0 || height <= 0)
-			{
-				left = 0;
-				top = 0;
-				width = client.getCanvasWidth();
-				height = client.getCanvasHeight();
-			}
-			// Where the character stands on screen; the middle of the view when there is no character to find
-			int footX = left + width / 2;
-			int footY = top + height * 2 / 3;
-			int headY = footY - 90;
 			Player me = client.getLocalPlayer();
 			LocalPoint at = me == null ? null : me.getLocalLocation();
-			if (at != null)
+			if (at == null)
 			{
-				Point feet = Perspective.localToCanvas(client, at, client.getPlane());
-				Point head = Perspective.localToCanvas(client, at, client.getPlane(), me.getLogicalHeight());
-				if (feet != null && head != null)
-				{
-					footX = feet.getX();
-					footY = feet.getY();
-					headY = head.getY();
-				}
+				return null;   // no character on screen (the login screen): nothing to burst from
 			}
-			DropCard.paintBeam(graphics, footX, footY, top, opacity);
-			int x = Math.max(left + 4, Math.min(left + width - DropCard.LARGE_WIDTH - 4, footX - DropCard.LARGE_WIDTH / 2));
-			int y = Math.max(top + 4, (headY + footY) / 2 - DropCard.LARGE_HEIGHT);
-			DropCard.paintLarge(graphics, x, y, shown, opacity);
+			Point feet = Perspective.localToCanvas(client, at, client.getPlane());
+			Point head = Perspective.localToCanvas(client, at, client.getPlane(), me.getLogicalHeight());
+			if (feet == null || head == null)
+			{
+				return null;
+			}
+			DropCard.paintBurst(graphics, feet.getX(), feet.getY(), head.getY(), client.getViewportYOffset(),
+				System.currentTimeMillis() - shownAt, opacity);
 			return null;
 		}
 	}
