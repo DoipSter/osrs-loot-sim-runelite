@@ -15,7 +15,8 @@ kills and press Simulate.
   chat, whichever is higher. **Clear** takes the last run off the panel.
 - A **Looting level** from 1 to 99, earned by simulating. It is saved per RuneScape account in RuneLite's own settings
   and is separate from the level on the website. Its icon plays the site's loot beam and dresses for Halloween,
-  Thanksgiving and Christmas; both can be switched off in the plugin's settings.
+  Thanksgiving and Christmas. In the settings the movement can be switched off, and the holiday look can follow the
+  season, stay off, or be one holiday all year.
 
 ## What it sends
 

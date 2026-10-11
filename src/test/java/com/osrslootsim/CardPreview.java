@@ -23,6 +23,7 @@ public final class CardPreview
 		String out = args.length > 0 ? args[0] : "build/cards.png";
 		String sprite = args.length > 1 ? args[1] : "";
 		Season season = args.length > 2 && !args[2].isEmpty() ? Season.valueOf(args[2].toUpperCase()) : Season.NONE;
+		DropCard.Glow glow = args.length > 3 && !args[3].isEmpty() ? DropCard.Glow.valueOf(args[3].toUpperCase()) : DropCard.Glow.GOLD;
 
 		DropCard.Drop drop = new DropCard.Drop("Avernic defender hilt");
 		File file = new File(sprite);
@@ -56,7 +57,7 @@ public final class CardPreview
 			g.fillRect(footX - 7, headY + 18, 14, 72);
 			AffineTransform ground = new AffineTransform(70, 0, 0, -30, footX, footY);
 			Rectangle view = new Rectangle(DropCard.WIDTH + 40 + column * i, 0, column, height - 30);
-			DropCard.paintBurstBehind(g, view, ground, footX, footY, MOMENTS[i], 1f, season, cut ->
+			DropCard.paintBurstBehind(g, view, ground, footX, footY, MOMENTS[i], 1f, season, glow, cut ->
 			{
 				cut.fillOval(footX - 9, headY, 18, 18);
 				cut.fillRect(footX - 7, headY + 18, 14, 72);

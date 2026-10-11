@@ -36,14 +36,25 @@ public interface LootSimConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "holidayIcon",
+		keyName = "holidayLook",
 		name = "Holiday looks and sound",
-		description = "Dress the Looting icon, the loot beam and the insane drop's sound for Halloween, Thanksgiving and Christmas",
+		description = "Dress the Looting icon, the loot beam and the insane drop's sound for a holiday: whichever is in season, none, or one of them all year",
 		position = 2
 	)
-	default boolean holidayIcon()
+	default HolidayLook holidayLook()
 	{
-		return true;
+		return HolidayLook.BY_SEASON;
+	}
+
+	@ConfigItem(
+		keyName = "beamColour",
+		name = "Loot beam colour",
+		description = "Gold, purple, or by holiday: purple with the Halloween look and gold otherwise",
+		position = 3
+	)
+	default BeamColour beamColour()
+	{
+		return BeamColour.BY_HOLIDAY;
 	}
 
 	@ConfigItem(

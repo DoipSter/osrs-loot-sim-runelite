@@ -48,6 +48,42 @@ final class DropCard
 	private static final double DISC = 0.95;
 	private static final float FLASH_REACH = 3.2f;
 	private static final Path2D BAT = bat();
+
+	/**
+	 * The colours of the beam and of the light on the floor: the site's gold, or the purple of its Looting icon. From
+	 * the beam's soft edge in to its core, then the floor's pool, the rune disc's lines, and the ring with its glow.
+	 */
+	enum Glow
+	{
+		GOLD(rgb(255, 170, 30), rgb(255, 200, 61), rgb(255, 236, 150), rgb(255, 251, 230), rgb(255, 186, 60), rgb(255, 214, 110), rgb(254, 222, 122), rgb(255, 138, 31)),
+		PURPLE(rgb(120, 44, 226), rgb(155, 61, 255), rgb(214, 180, 255), rgb(246, 238, 255), rgb(155, 61, 255), rgb(201, 168, 255), rgb(233, 210, 255), rgb(120, 44, 226));
+
+		final int[] edge;
+		final int[] body;
+		final int[] pale;
+		final int[] core;
+		final int[] pool;
+		final int[] line;
+		final int[] ring;
+		final int[] ringGlow;
+
+		Glow(int[] edge, int[] body, int[] pale, int[] core, int[] pool, int[] line, int[] ring, int[] ringGlow)
+		{
+			this.edge = edge;
+			this.body = body;
+			this.pale = pale;
+			this.core = core;
+			this.pool = pool;
+			this.line = line;
+			this.ring = ring;
+			this.ringGlow = ringGlow;
+		}
+
+		private static int[] rgb(int red, int green, int blue)
+		{
+			return new int[]{red, green, blue};
+		}
+	}
 	// The sheet the burst is drawn on before it goes over the game. Only the game's own thread draws.
 	private static BufferedImage sheet;
 
@@ -146,7 +182,7 @@ final class DropCard
 	 * drawn in. ground: where one tile around the character lands on screen (see paintBurst).
 	 */
 	static void paintBurstBehind(Graphics2D target, Rectangle view, AffineTransform ground, int footX, int footY, long age, float opacity,
-		Season season, Consumer<Graphics2D> cut)
+		Season season, Glow glow, Consumer<Graphics2D> cut)
 	{
 		double tileWide = Math.hypot(ground.getScaleX(), ground.getShearX());
 		double tileTall = Math.hypot(ground.getShearY(), ground.getScaleY());
@@ -169,7 +205,7 @@ final class DropCard
 		s.setClip(0, 0, area.width, area.height);
 		s.translate(-area.x, -area.y);
 		s.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		paintBurst(s, ground, footX, footY, view.y, age, season);
+		paintBurst(s, ground, footX, footY, view.y, age, season, glow);
 		s.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
 		s.setComposite(AlphaComposite.DstOut);
 		s.setColor(Color.BLACK);
@@ -187,9 +223,9 @@ final class DropCard
 	 * the rune disc, the rings) lies as flat as the game's own floor does at this camera angle. footX, footY: where
 	 * the character stands on screen. top: the top edge of the game view, where the beam leaves the screen. age:
 	 * milliseconds since the burst began; it drives every movement. season: the holiday it is dressed for. At Halloween
-	 * the rune disc is a jack-o'-lantern and the lights climbing the beam are bats.
+	 * the rune disc is a jack-o'-lantern and the lights climbing the beam are bats. glow: the colours of the light.
 	 */
-	static void paintBurst(Graphics2D g, AffineTransform ground, int footX, int footY, int top, long age, Season season)
+	static void paintBurst(Graphics2D g, AffineTransform ground, int footX, int footY, int top, long age, Season season, Glow glow)
 	{
 		double tileWide = Math.hypot(ground.getScaleX(), ground.getShearX());
 		int w = (int) Math.max(22, Math.min(90, Math.round(tileWide * 0.62)));   // the beam is a little over half a tile wide
@@ -204,14 +240,13 @@ final class DropCard
 			float reach = 0.4f + (FLASH_REACH - 0.4f) * ease(burst);
 			float bright = (float) Math.pow(1 - burst, 1.5);
 			floor.setPaint(new RadialGradientPaint(0, 0, reach, new float[]{0f, 0.28f, 0.76f, 1f},
-				new Color[]{new Color(255, 255, 255, Math.round(242 * bright)), new Color(255, 246, 216, Math.round(235 * bright)),
-					new Color(255, 210, 125, 0), new Color(255, 210, 125, 0)}));
+				new Color[]{new Color(255, 255, 255, Math.round(242 * bright)), tint(glow.core, 235 * bright), tint(glow.pale, 0), tint(glow.pale, 0)}));
 			floor.fill(new Ellipse2D.Float(-reach, -reach, 2 * reach, 2 * reach));
 		}
 
 		// A pool of light on the floor, swelling and settling
 		float pool = 1.9f + 0.2f * swell;
-		floor.setPaint(new RadialGradientPaint(0, 0, pool, new float[]{0f, 1f}, new Color[]{gold(110 + 20 * swell), gold(0)}));
+		floor.setPaint(new RadialGradientPaint(0, 0, pool, new float[]{0f, 1f}, new Color[]{tint(glow.pool, 110 + 20 * swell), tint(glow.pool, 0)}));
 		floor.fill(new Ellipse2D.Float(-pool, -pool, 2 * pool, 2 * pool));
 		floor.dispose();
 
@@ -222,7 +257,7 @@ final class DropCard
 		}
 		else
 		{
-			runeDisc(g, ground, age, swell);
+			runeDisc(g, ground, age, swell, glow);
 		}
 
 		// One ring racing outward along the floor as the beam lands
@@ -230,11 +265,11 @@ final class DropCard
 		if (raced > 0 && raced < 1)
 		{
 			g.setStroke(new BasicStroke(3f));
-			g.setColor(new Color(255, 246, 216, Math.round(230 * (1 - raced))));
+			g.setColor(tint(glow.core, 230 * (1 - raced)));
 			g.draw(circle(ground, DISC * (0.75 + 2.2 * ease(raced))));
 		}
 
-		beamAndLights(g, footX, footY, top, age, w, swell, halloween);
+		beamAndLights(g, footX, footY, top, age, w, swell, halloween, glow);
 
 		// The white-hot foot of the beam, lying on the floor under the character. Smaller on the pumpkin, to leave its
 		// face in view.
@@ -244,17 +279,17 @@ final class DropCard
 			Graphics2D lying = (Graphics2D) g.create();
 			lying.transform(ground);
 			lying.setPaint(new RadialGradientPaint(0, 0, foot, new float[]{0f, 0.35f, 0.6f, 1f},
-				new Color[]{Color.WHITE, Color.WHITE, new Color(255, 238, 160, 235), new Color(255, 196, 64, 0)}));
+				new Color[]{Color.WHITE, Color.WHITE, tint(glow.pale, 235), tint(glow.body, 0)}));
 			lying.fill(new Ellipse2D.Float(-foot, -foot, 2 * foot, 2 * foot));
 			lying.dispose();
 		}
 	}
 
 	// The rune disc turning on the floor, and the ring at its heart
-	private static void runeDisc(Graphics2D g, AffineTransform ground, long age, float swell)
+	private static void runeDisc(Graphics2D g, AffineTransform ground, long age, float swell, Glow glow)
 	{
 		g.setStroke(new BasicStroke(1.6f));
-		g.setColor(new Color(255, 214, 110, 235));
+		g.setColor(tint(glow.line, 235));
 		g.draw(circle(ground, DISC * 0.94));
 		g.draw(circle(ground, DISC * 0.57));
 		double turn = age / 18000.0 * 2 * Math.PI;
@@ -267,10 +302,10 @@ final class DropCard
 		}
 		double ring = DISC * (0.44 + 0.02 * swell);
 		g.setStroke(new BasicStroke(5f));
-		g.setColor(new Color(255, 138, 31, 70));
+		g.setColor(tint(glow.ringGlow, 70));
 		g.draw(circle(ground, ring));
 		g.setStroke(new BasicStroke(2f));
-		g.setColor(new Color(254, 222, 122, 230));
+		g.setColor(tint(glow.ring, 230));
 		g.draw(circle(ground, ring));
 	}
 
@@ -332,7 +367,7 @@ final class DropCard
 	/**
 	 * The beam, and what climbs it: small lights, or bats at Halloween.
 	 */
-	private static void beamAndLights(Graphics2D g, int footX, int footY, int top, long age, int w, float swell, boolean bats)
+	private static void beamAndLights(Graphics2D g, int footX, int footY, int top, long age, int w, float swell, boolean bats, Glow glow)
 	{
 		// The beam shoots up from the floor in the first third of a second, then breathes. Brightest near the floor,
 		// fading as it climbs: drawn in bands, each with its own strength.
@@ -346,11 +381,11 @@ final class DropCard
 		{
 			float up = (float) (footY - y) / length;   // 0 at the floor, 1 at the top of the view
 			float strength = (up < 0.05f ? up / 0.05f : up < 0.24f ? 1f : 1f - 0.45f * (up - 0.24f) / 0.76f) * breath;
-			Color none = new Color(255, 170, 30, 0);
-			Color amber = new Color(255, 170, 30, Math.round(97 * strength));
-			Color yellow = new Color(255, 200, 61, Math.round(209 * strength));
-			Color pale = new Color(255, 236, 150, Math.round(245 * strength));
-			Color white = new Color(255, 251, 230, Math.round(255 * strength));
+			Color none = tint(glow.edge, 0);
+			Color amber = tint(glow.edge, 97 * strength);
+			Color yellow = tint(glow.body, 209 * strength);
+			Color pale = tint(glow.pale, 245 * strength);
+			Color white = tint(glow.core, 255 * strength);
 			g.setPaint(new LinearGradientPaint(footX - halo, y, footX + halo, y, across,
 				new Color[]{none, none, amber, yellow, pale, white, pale, yellow, amber, none, none}));
 			g.fillRect(footX - halo, y, 2 * halo, Math.min(4, footY - y));
@@ -378,7 +413,7 @@ final class DropCard
 					bat(g, x + sway, y, Math.max(16, w * 0.55), beat, seen);
 					continue;
 				}
-				g.setColor(new Color(255, 242, 173, Math.round(150 * seen)));
+				g.setColor(tint(glow.pale, 150 * seen));
 				g.fillOval(x - 3, y - 3, 6, 6);
 				g.setColor(new Color(255, 255, 255, Math.round(255 * seen)));
 				g.fillOval(x - 1, y - 1, 3, 3);
@@ -428,9 +463,10 @@ final class DropCard
 		return bat;
 	}
 
-	private static Color gold(float alpha)
+	// A colour at a strength from 0 (clear) to 255 (solid)
+	private static Color tint(int[] rgb, float alpha)
 	{
-		return new Color(255, 186, 60, Math.max(0, Math.min(255, Math.round(alpha))));
+		return new Color(rgb[0], rgb[1], rgb[2], Math.max(0, Math.min(255, Math.round(alpha))));
 	}
 
 	// A circle on the floor around the character, so many tiles in radius, as it looks on screen

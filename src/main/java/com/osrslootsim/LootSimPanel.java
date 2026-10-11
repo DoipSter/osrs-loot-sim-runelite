@@ -281,7 +281,7 @@ final class LootSimPanel extends PluginPanel
 
 	private void dressIcon()
 	{
-		skillIcon.set(config.holidayIcon() ? Season.on(LocalDate.now()) : Season.NONE, config.animatedIcon());
+		skillIcon.set(config.holidayLook().season(LocalDate.now()), config.animatedIcon());
 		revalidate();
 	}
 

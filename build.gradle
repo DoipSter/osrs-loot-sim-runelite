@@ -37,12 +37,12 @@ tasks.withType(JavaCompile).configureEach {
 // boss: what to type in the boss box before the run; the first match is picked (optional). set: choices for that
 // boss's options row (optional).
 // Draws the insane-drop card and loot beam to a PNG:
-//   gradlew cardPreview -Pout=build/cards.png -Psprite=<an item's picture file> -Pseason=halloween
+//   gradlew cardPreview -Pout=build/cards.png -Psprite=<an item's picture file> -Pseason=halloween -Pglow=purple
 tasks.register('cardPreview', JavaExec) {
 	classpath = sourceSets.test.runtimeClasspath
 	mainClass = 'com.osrslootsim.CardPreview'
 	jvmArgs '-Djava.awt.headless=true'
-	args = [project.findProperty('out') ?: 'build/cards.png', project.findProperty('sprite') ?: '', project.findProperty('season') ?: '']
+	args = [project.findProperty('out') ?: 'build/cards.png', project.findProperty('sprite') ?: '', project.findProperty('season') ?: '', project.findProperty('glow') ?: '']
 }
 
 tasks.register('panelPreview', JavaExec) {
