@@ -55,7 +55,11 @@ import okhttp3.OkHttpClient;
 @PluginDescriptor(
 	name = "OSRS Loot Sim",
 	description = "Simulate kills at any boss, raid or clue from the side panel: the loot, its value and your chance of each rare drop by now. Uses osrslootsim.com",
-	tags = {"loot", "drop", "simulator", "dry", "calculator", "luck", "boss", "raid", "clue"}
+	// Kept the same as the tags in runelite-plugin.properties, which the Plugin Hub searches. A typed word finds the
+	// plugin when it is part of one of these, or of a word in the name or the description.
+	tags = {"loot", "drop", "drops", "drop rate", "drop table", "simulator", "simulation", "calculator", "calc", "odds", "probability", "rng", "luck",
+		"lucky", "dry", "dry streak", "dryness", "kc", "kill count", "killcount", "bosses", "bossing", "pvm", "raids", "cox", "tob", "toa", "clues",
+		"casket", "chest", "pet", "pets", "unique", "uniques", "purple", "collection log", "clog", "loot beam"}
 )
 public class LootSimPlugin extends Plugin implements Account
 {
