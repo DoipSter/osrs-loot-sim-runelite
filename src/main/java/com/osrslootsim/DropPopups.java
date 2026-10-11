@@ -8,7 +8,6 @@ import net.runelite.api.Client;
 import net.runelite.api.Model;
 import net.runelite.api.Perspective;
 import net.runelite.api.Player;
-import net.runelite.api.Point;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.gameval.InterfaceID;
@@ -182,19 +181,59 @@ final class DropPopups
 			// The floor under the character: where it stands, and one tile east and one tile north of it at the same
 			// height, give the slant every circle on the floor is drawn with
 			int height = Perspective.getTileHeight(client, at, world.getPlane());
-			Point feet = Perspective.localToCanvas(client, at.getX(), at.getY(), height);
-			Point east = Perspective.localToCanvas(client, at.getX() + Perspective.LOCAL_TILE_SIZE, at.getY(), height);
-			Point north = Perspective.localToCanvas(client, at.getX(), at.getY() + Perspective.LOCAL_TILE_SIZE, height);
+			double[] feet = onScreen(at.getX(), at.getY(), height);
+			double[] east = onScreen(at.getX() + Perspective.LOCAL_TILE_SIZE, at.getY(), height);
+			double[] north = onScreen(at.getX(), at.getY() + Perspective.LOCAL_TILE_SIZE, height);
 			if (feet == null || east == null || north == null)
 			{
 				return null;
 			}
-			AffineTransform ground = new AffineTransform(east.getX() - feet.getX(), east.getY() - feet.getY(),
-				north.getX() - feet.getX(), north.getY() - feet.getY(), feet.getX(), feet.getY());
+			AffineTransform ground = new AffineTransform(east[0] - feet[0], east[1] - feet[1], north[0] - feet[0], north[1] - feet[1], feet[0], feet[1]);
 			Rectangle view = new Rectangle(client.getViewportXOffset(), client.getViewportYOffset(), client.getViewportWidth(), client.getViewportHeight());
-			DropCard.paintBurstBehind(graphics, view, ground, feet.getX(), feet.getY(), System.currentTimeMillis() - shownAt, opacity,
+			DropCard.paintBurstBehind(graphics, view, ground, (int) Math.round(feet[0]), (int) Math.round(feet[1]), System.currentTimeMillis() - shownAt, opacity,
 				sheet -> outline(sheet, me, at, world));
 			return null;
+		}
+
+		/**
+		 * Where a point of the game world lands on screen, as RuneLite's own Perspective.localToCanvas works it out but
+		 * without rounding to whole pixels. A tile is only a few dozen pixels wide, so whole pixels made the circles on
+		 * the floor jump by a few percent from frame to frame while the camera turned. null for a point behind the
+		 * camera. With the GPU renderer the camera has fractional values, which is what the picture is drawn with;
+		 * without it the camera moves in the game's own steps (2048 to a full turn).
+		 */
+		private double[] onScreen(double x, double y, double z)
+		{
+			double pitch;
+			double yaw;
+			if (client.isGpu())
+			{
+				pitch = client.getCameraFpPitch();
+				yaw = client.getCameraFpYaw();
+				x -= client.getCameraFpX();
+				y -= client.getCameraFpY();
+				z -= client.getCameraFpZ();
+			}
+			else
+			{
+				pitch = client.getCameraPitch() * Perspective.UNIT;
+				yaw = client.getCameraYaw() * Perspective.UNIT;
+				x -= client.getCameraX();
+				y -= client.getCameraY();
+				z -= client.getCameraZ();
+			}
+			double across = x * Math.cos(yaw) + y * Math.sin(yaw);
+			double along = y * Math.cos(yaw) - x * Math.sin(yaw);
+			double down = z * Math.cos(pitch) - along * Math.sin(pitch);
+			double away = along * Math.cos(pitch) + z * Math.sin(pitch);
+			if (away < 50)
+			{
+				return null;
+			}
+			double scale = client.getScale();
+			return new double[]{
+				client.getViewportWidth() / 2.0 + across * scale / away + client.getViewportXOffset(),
+				client.getViewportHeight() / 2.0 + down * scale / away + client.getViewportYOffset()};
 		}
 
 		/**
