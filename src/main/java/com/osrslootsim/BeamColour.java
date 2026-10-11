@@ -1,14 +1,16 @@
 package com.osrslootsim;
 
 /**
- * The loot beam's colour: the site's gold, the purple of its Looting icon, or whichever suits the holiday look
- * (purple at Halloween, gold otherwise).
+ * The loot beam's colour: one colour always, or whichever suits the holiday look (purple at Halloween, autumn orange
+ * at Thanksgiving, ice white at Christmas, and the site's gold the rest of the year).
  */
 public enum BeamColour
 {
 	BY_HOLIDAY("By holiday"),
 	GOLD("Gold"),
-	PURPLE("Purple");
+	PURPLE("Purple"),
+	AUTUMN("Autumn orange"),
+	ICE("Ice white");
 
 	private final String name;
 
@@ -19,8 +21,22 @@ public enum BeamColour
 
 	DropCard.Glow glow(Season season)
 	{
-		boolean purple = this == PURPLE || this == BY_HOLIDAY && season == Season.HALLOWEEN;
-		return purple ? DropCard.Glow.PURPLE : DropCard.Glow.GOLD;
+		switch (this)
+		{
+			case GOLD:
+				return DropCard.Glow.GOLD;
+			case PURPLE:
+				return DropCard.Glow.PURPLE;
+			case AUTUMN:
+				return DropCard.Glow.AUTUMN;
+			case ICE:
+				return DropCard.Glow.ICE;
+			default:
+				return season == Season.HALLOWEEN ? DropCard.Glow.PURPLE
+					: season == Season.THANKSGIVING ? DropCard.Glow.AUTUMN
+					: season == Season.CHRISTMAS ? DropCard.Glow.ICE
+					: DropCard.Glow.GOLD;
+		}
 	}
 
 	@Override

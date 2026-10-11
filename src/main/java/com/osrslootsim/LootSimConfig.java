@@ -49,7 +49,7 @@ public interface LootSimConfig extends Config
 	@ConfigItem(
 		keyName = "beamColour",
 		name = "Loot beam colour",
-		description = "Gold, purple, or by holiday: purple with the Halloween look and gold otherwise",
+		description = "One colour always, or by holiday: purple at Halloween, autumn orange at Thanksgiving, ice white at Christmas and gold otherwise",
 		position = 3
 	)
 	default BeamColour beamColour()

@@ -52,15 +52,19 @@ final class DropCard
 	private static final Path2D BAT = bat();
 	private static final Path2D LEAF = leaf();
 	private static final Path2D FLAKE = flake();
+	private static final float[][] LITTER = scatter(18);
 
 	/**
-	 * The colours of the beam and of the light on the floor: the site's gold, or the purple of its Looting icon. From
+	 * The colours of the beam and of the light on the floor: the site's gold, the purple of its Looting icon, an autumn
+	 * orange and an ice white. From
 	 * the beam's soft edge in to its core, then the floor's pool, the rune disc's lines, and the ring with its glow.
 	 */
 	enum Glow
 	{
 		GOLD(rgb(255, 170, 30), rgb(255, 200, 61), rgb(255, 236, 150), rgb(255, 251, 230), rgb(255, 186, 60), rgb(255, 214, 110), rgb(254, 222, 122), rgb(255, 138, 31)),
-		PURPLE(rgb(120, 44, 226), rgb(155, 61, 255), rgb(214, 180, 255), rgb(246, 238, 255), rgb(155, 61, 255), rgb(201, 168, 255), rgb(233, 210, 255), rgb(120, 44, 226));
+		PURPLE(rgb(120, 44, 226), rgb(155, 61, 255), rgb(214, 180, 255), rgb(246, 238, 255), rgb(155, 61, 255), rgb(201, 168, 255), rgb(233, 210, 255), rgb(120, 44, 226)),
+		AUTUMN(rgb(206, 84, 16), rgb(236, 128, 36), rgb(255, 208, 140), rgb(255, 244, 224), rgb(214, 110, 30), rgb(244, 170, 90), rgb(255, 200, 120), rgb(190, 70, 14)),
+		ICE(rgb(120, 176, 236), rgb(176, 214, 250), rgb(226, 242, 255), rgb(255, 255, 255), rgb(160, 206, 246), rgb(206, 232, 255), rgb(238, 248, 255), rgb(120, 176, 236));
 
 		final int[] edge;
 		final int[] body;
@@ -256,6 +260,16 @@ final class DropCard
 		floor.fill(new Ellipse2D.Float(-pool, -pool, 2 * pool, 2 * pool));
 		floor.dispose();
 
+		// What the burst leaves on the floor as it spreads: frost in winter, fallen leaves on dried ground in autumn
+		if (season == Season.CHRISTMAS)
+		{
+			frost(g, ground, age);
+		}
+		else if (season == Season.THANKSGIVING)
+		{
+			leafLitter(g, ground, age);
+		}
+
 		// What lies on the floor under the character: the rune disc, or the holiday's own picture
 		boolean dressed = season != Season.NONE;
 		switch (season)
@@ -365,6 +379,115 @@ final class DropCard
 		floor.setColor(new Color(255, 240, 150, Math.round(205 + 50 * swell)));
 		floor.fill(face);
 		floor.dispose();
+	}
+
+	/**
+	 * Frost creeping out over the floor from under the character: a pale sheet of ice that spreads in under a second,
+	 * crystals growing through it like the arms of a snowflake, and glints that come and go.
+	 */
+	private static void frost(Graphics2D g, AffineTransform ground, long age)
+	{
+		float grown = ease(Math.min(1f, age / 900f));
+		float reach = 0.3f + 2.4f * grown;
+		Graphics2D floor = (Graphics2D) g.create();
+		floor.transform(ground);
+		floor.setPaint(new RadialGradientPaint(0, 0, reach, new float[]{0f, 0.72f, 1f},
+			new Color[]{new Color(238, 248, 255, 165), new Color(190, 226, 252, 125), new Color(190, 226, 252, 0)}));
+		floor.fill(new Ellipse2D.Float(-reach, -reach, 2 * reach, 2 * reach));
+		floor.dispose();
+
+		// Twelve crystals, long and short by turns, each with twigs branching off both sides
+		g.setStroke(new BasicStroke(1.3f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+		g.setColor(new Color(242, 250, 255, 215));
+		for (int k = 0; k < 12; k++)
+		{
+			double a = k * Math.PI / 6 + (k % 2) * 0.13;
+			double length = reach * (k % 2 == 0 ? 0.94 : 0.68);
+			g.draw(ground.createTransformedShape(new Line2D.Double(Math.cos(a) * 0.3, Math.sin(a) * 0.3, Math.cos(a) * length, Math.sin(a) * length)));
+			for (double along : new double[]{0.42, 0.63, 0.82})
+			{
+				double x = Math.cos(a) * length * along;
+				double y = Math.sin(a) * length * along;
+				double twig = length * 0.17 * (1.2 - along);
+				for (int side = -1; side <= 1; side += 2)
+				{
+					double b = a + side * Math.toRadians(55);
+					g.draw(ground.createTransformedShape(new Line2D.Double(x, y, x + Math.cos(b) * twig, y + Math.sin(b) * twig)));
+				}
+			}
+		}
+
+		// Glints on the ice, each twinkling in its own time
+		for (int k = 0; k < LITTER.length; k++)
+		{
+			float[] spot = LITTER[k];
+			float bright = (float) Math.sin(age / 280.0 + k * 2.1);
+			if (spot[1] > reach || bright <= 0)
+			{
+				continue;
+			}
+			Point2D at = ground.transform(new Point2D.Double(Math.cos(spot[0]) * spot[1], Math.sin(spot[0]) * spot[1]), null);
+			double arm = 1.5 + 2.5 * bright;
+			g.setColor(new Color(255, 255, 255, Math.round(235 * bright)));
+			g.draw(new Line2D.Double(at.getX() - arm, at.getY(), at.getX() + arm, at.getY()));
+			g.draw(new Line2D.Double(at.getX(), at.getY() - arm, at.getX(), at.getY() + arm));
+		}
+	}
+
+	/**
+	 * Autumn spreading out over the floor from under the character: the ground dries to a warm brown, and fallen
+	 * leaves are left lying where the spread has passed.
+	 */
+	private static void leafLitter(Graphics2D g, AffineTransform ground, long age)
+	{
+		float spread = ease(Math.min(1f, age / 900f));
+		float reach = 0.3f + 2.4f * spread;
+		Graphics2D floor = (Graphics2D) g.create();
+		floor.transform(ground);
+		floor.setPaint(new RadialGradientPaint(0, 0, reach, new float[]{0f, 0.7f, 1f},
+			new Color[]{new Color(168, 104, 44, 140), new Color(128, 78, 30, 110), new Color(128, 78, 30, 0)}));
+		floor.fill(new Ellipse2D.Float(-reach, -reach, 2 * reach, 2 * reach));
+		int[][] autumn = {{245, 165, 58}, {232, 85, 63}, {240, 200, 70}, {166, 98, 40}};
+		for (int k = 0; k < LITTER.length; k++)
+		{
+			float[] spot = LITTER[k];
+			if (spot[1] > reach)
+			{
+				continue;
+			}
+			float landed = Math.min(1f, (reach - spot[1]) / 0.35f);   // comes in as the spread passes over its place
+			int[] rgb = autumn[k % autumn.length];
+			Graphics2D leaf = (Graphics2D) floor.create();
+			leaf.translate(Math.cos(spot[0]) * spot[1], Math.sin(spot[0]) * spot[1]);
+			leaf.rotate(spot[2]);
+			leaf.scale(spot[3] / 64.0, spot[3] / 64.0);
+			leaf.setStroke(new BasicStroke(3f));
+			leaf.setColor(new Color(60, 28, 8, Math.round(150 * landed)));
+			leaf.draw(LEAF);
+			leaf.setColor(new Color(rgb[0], rgb[1], rgb[2], Math.round(240 * landed)));
+			leaf.fill(LEAF);
+			leaf.dispose();
+		}
+		floor.dispose();
+	}
+
+	// Places scattered over the floor around the character, the same every time: the way round (radians), how far out
+	// (tiles), a turn (radians) and a size (tiles). Fallen leaves lie on them, and glints of frost twinkle on them.
+	private static float[][] scatter(int count)
+	{
+		float[][] spots = new float[count][];
+		long seed = 20261011L;
+		for (int i = 0; i < count; i++)
+		{
+			float[] spot = new float[4];
+			for (int j = 0; j < 4; j++)
+			{
+				seed = (seed * 6364136223846793005L + 1442695040888963407L);
+				spot[j] = (seed >>> 40) / (float) (1 << 24);
+			}
+			spots[i] = new float[]{(float) (2 * Math.PI * (i + spot[0] * 0.8f) / count), 0.85f + 1.75f * spot[1], (float) (2 * Math.PI * spot[2]), 0.3f + 0.16f * spot[3]};
+		}
+		return spots;
 	}
 
 	/**
