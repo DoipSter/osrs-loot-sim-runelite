@@ -260,8 +260,13 @@ final class DropCard
 		floor.fill(new Ellipse2D.Float(-pool, -pool, 2 * pool, 2 * pool));
 		floor.dispose();
 
-		// What the burst leaves on the floor as it spreads: frost in winter, fallen leaves on dried ground in autumn
-		if (season == Season.CHRISTMAS)
+		// What the burst leaves on the floor as it spreads: mist and a cobweb at Halloween, fallen leaves on dried ground
+		// in autumn, frost in winter
+		if (season == Season.HALLOWEEN)
+		{
+			cobweb(g, ground, age);
+		}
+		else if (season == Season.CHRISTMAS)
 		{
 			frost(g, ground, age);
 		}
@@ -379,6 +384,61 @@ final class DropCard
 		floor.setColor(new Color(255, 240, 150, Math.round(205 + 50 * swell)));
 		floor.fill(face);
 		floor.dispose();
+	}
+
+	/**
+	 * Halloween creeping out over the floor from under the character: a purple mist with paler puffs drifting round in
+	 * it, and a cobweb spinning itself outward, thread by thread and ring by ring.
+	 */
+	private static void cobweb(Graphics2D g, AffineTransform ground, long age)
+	{
+		float grown = ease(Math.min(1f, age / 900f));
+		float reach = 0.3f + 2.4f * grown;
+		Graphics2D floor = (Graphics2D) g.create();
+		floor.transform(ground);
+		floor.setPaint(new RadialGradientPaint(0, 0, reach, new float[]{0f, 0.7f, 1f},
+			new Color[]{new Color(126, 74, 196, 135), new Color(74, 42, 126, 105), new Color(74, 42, 126, 0)}));
+		floor.fill(new Ellipse2D.Float(-reach, -reach, 2 * reach, 2 * reach));
+		for (int k = 0; k < LITTER.length; k += 2)
+		{
+			float[] spot = LITTER[k];
+			if (spot[1] > reach)
+			{
+				continue;
+			}
+			double round = spot[0] + age / 9000.0;   // the puffs drift slowly round the character
+			float puff = 0.42f + 0.1f * (float) Math.sin(age / 700.0 + k);
+			float x = (float) (Math.cos(round) * spot[1]);
+			float y = (float) (Math.sin(round) * spot[1]);
+			floor.setPaint(new RadialGradientPaint(x, y, puff, new float[]{0f, 1f}, new Color[]{new Color(196, 176, 236, 78), new Color(196, 176, 236, 0)}));
+			floor.fill(new Ellipse2D.Float(x - puff, y - puff, 2 * puff, 2 * puff));
+		}
+		floor.dispose();
+
+		// The web: ten threads out from the middle, joined by rings that sag toward it between each pair of threads
+		int threads = 10;
+		Path2D web = new Path2D.Double();
+		for (int k = 0; k < threads; k++)
+		{
+			double a = k * 2 * Math.PI / threads + 0.1;
+			web.moveTo(Math.cos(a) * 0.3, Math.sin(a) * 0.3);
+			web.lineTo(Math.cos(a) * reach * 0.97, Math.sin(a) * reach * 0.97);
+		}
+		for (double ring : new double[]{0.3, 0.5, 0.72, 0.92})
+		{
+			double out = reach * ring;
+			for (int k = 0; k < threads; k++)
+			{
+				double a = k * 2 * Math.PI / threads + 0.1;
+				double b = a + 2 * Math.PI / threads;
+				double mid = (a + b) / 2;
+				web.moveTo(Math.cos(a) * out, Math.sin(a) * out);
+				web.quadTo(Math.cos(mid) * out * 0.84, Math.sin(mid) * out * 0.84, Math.cos(b) * out, Math.sin(b) * out);
+			}
+		}
+		g.setStroke(new BasicStroke(1.1f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+		g.setColor(new Color(238, 232, 248, 190));
+		g.draw(ground.createTransformedShape(web));
 	}
 
 	/**
