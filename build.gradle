@@ -57,3 +57,10 @@ tasks.register('panelPreview', JavaExec) {
 		project.findProperty('set') ?: ''
 	]
 }
+
+// Times what the plugin draws every frame and does on every keystroke, without the game: gradlew bench
+tasks.register('bench', JavaExec) {
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.osrslootsim.Bench'
+	jvmArgs '-Djava.awt.headless=true'
+}

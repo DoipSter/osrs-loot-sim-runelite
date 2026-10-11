@@ -3,20 +3,31 @@ package com.osrslootsim;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
-import java.awt.geom.AffineTransform;
 import java.io.IOException;
 import java.time.LocalDate;
 import javax.sound.sampled.LineUnavailableException;
 import javax.sound.sampled.UnsupportedAudioFileException;
+import net.runelite.api.Actor;
 import net.runelite.api.Client;
+import net.runelite.api.Constants;
+import net.runelite.api.DecorativeObject;
+import net.runelite.api.GameObject;
+import net.runelite.api.GroundObject;
+import net.runelite.api.ItemLayer;
 import net.runelite.api.Model;
+import net.runelite.api.NPC;
 import net.runelite.api.Perspective;
 import net.runelite.api.Player;
+import net.runelite.api.Point;
+import net.runelite.api.Renderable;
+import net.runelite.api.Tile;
+import net.runelite.api.WallObject;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.audio.AudioPlayer;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayManager;
@@ -24,9 +35,9 @@ import net.runelite.client.ui.overlay.OverlayPosition;
 
 /**
  * The plugin's celebrations. An insane drop in a simulated run gets a card in the chatbox with the item, a burst of
- * light with a loot beam on the floor under the player's character (drawn behind the character), and the site's pet
- * fanfare. The burst can also mark a level gained or a new collection log item in the game itself. Each part has its
- * own switch in the plugin's settings, and everything goes by itself after a few seconds.
+ * light with a loot beam on the floor under the player's character, and the site's pet fanfare. The burst can also
+ * mark a level gained, a new collection log item or valuable loot in the game itself. Each part has its own switch in
+ * the plugin's settings, and everything goes by itself after a few seconds.
  */
 final class DropPopups
 {
@@ -37,8 +48,17 @@ final class DropPopups
 	// Two reports of one event (a chat line and a pop-up for the same collection log item) are one burst
 	private static final int SAME_EVENT_MS = 1500;
 	private static final String INSANE = "insane";
+	// How far around the character to look for things standing in front of the burst, in tiles
+	private static final int AROUND = 6;
+	// How far from where it stands a thing is taken to reach at most, in the game's units (128 to a tile)
+	private static final int THING_REACH = 448;
+	// A model that rises less than this off the floor is part of the floor (a rug, a marking), and the burst lies on it
+	private static final int FLOOR_THICK = 24;
+	// How much nearer to the camera than the character something must stand to hide the beam
+	private static final int NEARER_BY = 40;
 
 	private final Client client;
+	private final ClientThread clientThread;
 	private final LootSimConfig config;
 	private final Icons icons;
 	private final OverlayManager overlayManager;
@@ -53,11 +73,12 @@ final class DropPopups
 	private volatile long burstAt;
 	// The holiday the burst is dressed for, settled when it starts
 	private volatile Season burstSeason = Season.NONE;
-	private volatile DropCard.Glow burstGlow = DropCard.Glow.GOLD;
+	private volatile Burst.Glow burstGlow = Burst.Glow.GOLD;
 
-	DropPopups(Client client, LootSimConfig config, Icons icons, OverlayManager overlayManager, AudioPlayer audioPlayer)
+	DropPopups(Client client, ClientThread clientThread, LootSimConfig config, Icons icons, OverlayManager overlayManager, AudioPlayer audioPlayer)
 	{
 		this.client = client;
+		this.clientThread = clientThread;
 		this.config = config;
 		this.icons = icons;
 		this.overlayManager = overlayManager;
@@ -76,6 +97,8 @@ final class DropPopups
 		overlayManager.remove(burst);
 		drop = null;
 		burstAt = 0;
+		// The burst's sheets belong to the game's thread, which may be drawing on them right now
+		clientThread.invokeLater(Burst::release);
 	}
 
 	/**
@@ -116,8 +139,8 @@ final class DropPopups
 	}
 
 	/**
-	 * Starts the burst on the character. Called for an insane drop, and for a level or a collection log item gained
-	 * in the game when those switches are on.
+	 * Starts the burst on the character. Called for an insane drop, and for a level, a collection log item or valuable
+	 * loot gained in the game when those switches are on.
 	 */
 	void burst()
 	{
@@ -209,13 +232,40 @@ final class DropPopups
 	}
 
 	/**
-	 * The burst of light and the loot beam, on the floor under the player's character and behind it.
+	 * The burst of light and the loot beam, in the game world: on the floor under the player's character, under
+	 * everything that stands on that floor, with the beam behind the character.
 	 */
 	private final class CharacterBurst extends Overlay
 	{
-		// Where the character's model lands on screen, corner by corner; kept between frames to spare the garbage
+		// Where a model lands on screen, corner by corner; kept between frames to spare the garbage
 		private int[] cornerX = new int[0];
 		private int[] cornerY = new int[0];
+		private final double[] spot = new double[2];
+		// True while the burst's sheets are in use
+		private boolean drawn;
+
+		// The frame being drawn: the camera, the floor, and where the character stands on it
+		private double cameraX;
+		private double cameraY;
+		private double cameraZ;
+		private double yawSin;
+		private double yawCos;
+		private double pitchSin;
+		private double pitchCos;
+		private double scale;
+		private double middleX;
+		private double middleY;
+		private WorldView world;
+		private int plane;
+		private int[][][] heights;
+		private byte[][][] settings;
+		private double standsX;
+		private double standsY;
+		private double standsZ;
+		// False on a boat: its floor moves through the world, and only RuneLite's own way of placing things knows how
+		private boolean plain;
+		// How far in front of the camera the character is
+		private double mine;
 
 		CharacterBurst()
 		{
@@ -231,40 +281,35 @@ final class DropPopups
 			float opacity = opacity(began);
 			if (opacity <= 0)
 			{
+				if (drawn)
+				{
+					drawn = false;
+					Burst.release();
+				}
 				return null;
 			}
 			Player me = client.getLocalPlayer();
 			LocalPoint at = me == null ? null : me.getLocalLocation();
-			WorldView world = me == null ? null : me.getWorldView();
-			if (at == null || world == null)
+			WorldView around = me == null ? null : me.getWorldView();
+			if (at == null || around == null)
 			{
 				return null;   // no character on screen (the login screen): nothing to burst from
 			}
-			// The floor under the character: where it stands, and one tile east and one tile north of it at the same
-			// height, give the slant every circle on the floor is drawn with
-			int height = Perspective.getTileHeight(client, at, world.getPlane());
-			double[] feet = onScreen(at.getX(), at.getY(), height);
-			double[] east = onScreen(at.getX() + Perspective.LOCAL_TILE_SIZE, at.getY(), height);
-			double[] north = onScreen(at.getX(), at.getY() + Perspective.LOCAL_TILE_SIZE, height);
-			if (feet == null || east == null || north == null)
-			{
-				return null;
-			}
-			AffineTransform ground = new AffineTransform(east[0] - feet[0], east[1] - feet[1], north[0] - feet[0], north[1] - feet[1], feet[0], feet[1]);
+			look(around, at);
 			Rectangle view = new Rectangle(client.getViewportXOffset(), client.getViewportYOffset(), client.getViewportWidth(), client.getViewportHeight());
-			DropCard.paintBurstBehind(graphics, view, ground, (int) Math.round(feet[0]), (int) Math.round(feet[1]), System.currentTimeMillis() - began, opacity,
-				burstSeason, burstGlow, sheet -> outline(sheet, me, at, world));
+			drawn = true;
+			Burst.paint(graphics, view, this::floor, System.currentTimeMillis() - began, opacity, burstSeason, burstGlow, cut -> infront(cut, me));
+			world = null;
+			heights = null;
+			settings = null;
 			return null;
 		}
 
 		/**
-		 * Where a point of the game world lands on screen, as RuneLite's own Perspective.localToCanvas works it out but
-		 * without rounding to whole pixels. A tile is only a few dozen pixels wide, so whole pixels made the circles on
-		 * the floor jump by a few percent from frame to frame while the camera turned. null for a point behind the
-		 * camera. With the GPU renderer the camera has fractional values, which is what the picture is drawn with;
-		 * without it the camera moves in the game's own steps (2048 to a full turn).
+		 * Takes down what this frame is drawn with. With the GPU renderer the camera has fractional values, which is
+		 * what the picture is drawn with; without it the camera moves in the game's own steps (2048 to a full turn).
 		 */
-		private double[] onScreen(double x, double y, double z)
+		private void look(WorldView around, LocalPoint at)
 		{
 			double pitch;
 			double yaw;
@@ -272,77 +317,292 @@ final class DropPopups
 			{
 				pitch = client.getCameraFpPitch();
 				yaw = client.getCameraFpYaw();
-				x -= client.getCameraFpX();
-				y -= client.getCameraFpY();
-				z -= client.getCameraFpZ();
+				cameraX = client.getCameraFpX();
+				cameraY = client.getCameraFpY();
+				cameraZ = client.getCameraFpZ();
 			}
 			else
 			{
 				pitch = client.getCameraPitch() * Perspective.UNIT;
 				yaw = client.getCameraYaw() * Perspective.UNIT;
-				x -= client.getCameraX();
-				y -= client.getCameraY();
-				z -= client.getCameraZ();
+				cameraX = client.getCameraX();
+				cameraY = client.getCameraY();
+				cameraZ = client.getCameraZ();
 			}
-			double across = x * Math.cos(yaw) + y * Math.sin(yaw);
-			double along = y * Math.cos(yaw) - x * Math.sin(yaw);
-			double down = z * Math.cos(pitch) - along * Math.sin(pitch);
-			double away = along * Math.cos(pitch) + z * Math.sin(pitch);
-			if (away < 50)
-			{
-				return null;
-			}
-			double scale = client.getScale();
-			return new double[]{
-				client.getViewportWidth() / 2.0 + across * scale / away + client.getViewportXOffset(),
-				client.getViewportHeight() / 2.0 + down * scale / away + client.getViewportYOffset()};
+			yawSin = Math.sin(yaw);
+			yawCos = Math.cos(yaw);
+			pitchSin = Math.sin(pitch);
+			pitchCos = Math.cos(pitch);
+			scale = client.getScale();
+			middleX = client.getViewportWidth() / 2.0 + client.getViewportXOffset();
+			middleY = client.getViewportHeight() / 2.0 + client.getViewportYOffset();
+			world = around;
+			plane = around.getPlane();
+			heights = around.getTileHeights();
+			settings = around.getTileSettings();
+			plain = around.isTopLevel() && heights != null && settings != null;
+			standsX = at.getX();
+			standsY = at.getY();
+			standsZ = Perspective.getTileHeight(client, at, plane);
+			mine = plain ? onScreen(standsX, standsY, standsZ, spot) : -1;
 		}
 
 		/**
-		 * Fills the character's shape on screen, face by face of its model, placed the way RuneLite's own outline
-		 * drawing places an actor's model. What it fills is wiped off the burst, which leaves the character in front.
+		 * Where a spot on the floor lands on screen, for Burst: so many tiles east and north of the character, at the
+		 * height the floor has there.
 		 */
-		private void outline(Graphics2D sheet, Player me, LocalPoint at, WorldView world)
+		private boolean floor(double east, double north, double[] screen)
 		{
-			Model model = me.getModel();
+			double x = standsX + east * Perspective.LOCAL_TILE_SIZE;
+			double y = standsY + north * Perspective.LOCAL_TILE_SIZE;
+			if (plain)
+			{
+				return onScreen(x, y, height(x, y), screen) > 0;
+			}
+			Point point = Perspective.localToCanvas(client, new LocalPoint((int) Math.round(x), (int) Math.round(y), world), plane, 0);
+			if (point == null)
+			{
+				return false;
+			}
+			screen[0] = point.getX();
+			screen[1] = point.getY();
+			return true;
+		}
+
+		/**
+		 * How high the floor is at a spot: between the heights of the four corners of its tile, as RuneLite's own
+		 * Perspective.getTileHeight works it out, but without rounding. Off the map, the height under the character.
+		 */
+		private double height(double x, double y)
+		{
+			int tileX = (int) Math.floor(x / Perspective.LOCAL_TILE_SIZE);
+			int tileY = (int) Math.floor(y / Perspective.LOCAL_TILE_SIZE);
+			int level = plane;
+			if (tileX < 0 || tileY < 0 || level < 0 || level >= heights.length || tileX + 1 >= heights[level].length || tileY + 1 >= heights[level][tileX + 1].length)
+			{
+				return standsZ;
+			}
+			// A tile on a bridge has its floor a level up
+			if (level < Constants.MAX_Z - 1 && level + 1 < heights.length && settings.length > 1 && tileX < settings[1].length && tileY < settings[1][tileX].length
+				&& (settings[1][tileX][tileY] & Constants.TILE_FLAG_BRIDGE) == Constants.TILE_FLAG_BRIDGE)
+			{
+				level++;
+			}
+			int[][] corner = heights[level];
+			double across = x / Perspective.LOCAL_TILE_SIZE - tileX;
+			double up = y / Perspective.LOCAL_TILE_SIZE - tileY;
+			double south = corner[tileX][tileY] * (1 - across) + corner[tileX + 1][tileY] * across;
+			double north = corner[tileX][tileY + 1] * (1 - across) + corner[tileX + 1][tileY + 1] * across;
+			return south * (1 - up) + north * up;
+		}
+
+		/**
+		 * Where a point of the game world lands on screen, as RuneLite's own Perspective.localToCanvas works it out but
+		 * without rounding to whole pixels: a tile is only a few dozen pixels wide, so whole pixels made the circles on
+		 * the floor jump from frame to frame while the camera turned. Fills screen and answers how far in front of the
+		 * camera the point is; answers -1, leaving screen alone, for a point behind the camera.
+		 */
+		private double onScreen(double x, double y, double z, double[] screen)
+		{
+			x -= cameraX;
+			y -= cameraY;
+			z -= cameraZ;
+			double across = x * yawCos + y * yawSin;
+			double along = y * yawCos - x * yawSin;
+			double down = z * pitchCos - along * pitchSin;
+			double away = along * pitchCos + z * pitchSin;
+			if (away < 50)
+			{
+				return -1;
+			}
+			screen[0] = middleX + across * scale / away;
+			screen[1] = middleY + down * scale / away;
+			return away;
+		}
+
+		// Whether something standing at a point is between the character and the camera
+		private boolean nearer(double x, double y, double z)
+		{
+			if (!plain || mine < 0)
+			{
+				return false;
+			}
+			double away = onScreen(x, y, z, spot);
+			return away > 0 && away < mine - NEARER_BY;
+		}
+
+		/**
+		 * Wipes off the burst everything that stands in front of it: the character, other players and monsters, and on
+		 * the tiles around, scenery, walls, what hangs on them, and items lying on the floor.
+		 */
+		private void infront(Burst.Cut cut, Player me)
+		{
+			actor(cut, me, true);
+			for (NPC npc : world.npcs())
+			{
+				actor(cut, npc, false);
+			}
+			for (Player player : world.players())
+			{
+				if (player != me)
+				{
+					actor(cut, player, false);
+				}
+			}
+
+			Tile[][][] levels = world.getScene().getTiles();
+			if (levels == null || plane < 0 || plane >= levels.length || levels[plane] == null)
+			{
+				return;
+			}
+			Tile[][] tiles = levels[plane];
+			int middleTileX = (int) Math.floor(standsX / Perspective.LOCAL_TILE_SIZE);
+			int middleTileY = (int) Math.floor(standsY / Perspective.LOCAL_TILE_SIZE);
+			int fromX = Math.max(0, middleTileX - AROUND);
+			int fromY = Math.max(0, middleTileY - AROUND);
+			for (int tileX = fromX; tileX <= middleTileX + AROUND && tileX < tiles.length; tileX++)
+			{
+				for (int tileY = fromY; tileY <= middleTileY + AROUND && tileY < tiles[tileX].length; tileY++)
+				{
+					Tile tile = tiles[tileX][tileY];
+					if (tile != null)
+					{
+						tile(cut, tile, tileX, tileY, fromX, fromY);
+					}
+				}
+			}
+		}
+
+		private void tile(Burst.Cut cut, Tile tile, int tileX, int tileY, int fromX, int fromY)
+		{
+			GameObject[] objects = tile.getGameObjects();
+			if (objects != null)
+			{
+				for (GameObject object : objects)
+				{
+					// A player or a monster is listed among the scenery of its tile too, and has its turn by itself
+					if (object == null || object.getRenderable() instanceof Actor)
+					{
+						continue;
+					}
+					// One that covers several tiles is listed on each of them: taken on the first it has among those looked at
+					Point corner = object.getSceneMinLocation();
+					if (corner != null && (Math.max(corner.getX(), fromX) != tileX || Math.max(corner.getY(), fromY) != tileY))
+					{
+						continue;
+					}
+					int z = object.getZ();
+					thing(cut, object.getRenderable(), object.getX(), object.getY(), z, object.getModelOrientation(),
+						nearer(object.getX(), object.getY(), z), false, THING_REACH + Math.max(object.sizeX(), object.sizeY()) * Perspective.LOCAL_TILE_SIZE / 2);
+				}
+			}
+
+			WallObject wall = tile.getWallObject();
+			if (wall != null)
+			{
+				// A wall stands on an edge of its tile: that edge, not the middle of the tile, says which side of the
+				// character it is on
+				int side = wall.getOrientationA();
+				int edgeX = wall.getX() + ((side & 4) != 0 ? 60 : (side & 1) != 0 ? -60 : 0);
+				int edgeY = wall.getY() + ((side & 2) != 0 ? 60 : (side & 8) != 0 ? -60 : 0);
+				boolean nearer = nearer(edgeX, edgeY, wall.getZ());
+				thing(cut, wall.getRenderable1(), wall.getX(), wall.getY(), wall.getZ(), 0, nearer, true, THING_REACH);
+				thing(cut, wall.getRenderable2(), wall.getX(), wall.getY(), wall.getZ(), 0, nearer, true, THING_REACH);
+			}
+
+			DecorativeObject hung = tile.getDecorativeObject();
+			if (hung != null)
+			{
+				int z = hung.getZ();
+				boolean nearer = nearer(hung.getX() + hung.getXOffset(), hung.getY() + hung.getYOffset(), z);
+				thing(cut, hung.getRenderable(), hung.getX() + hung.getXOffset(), hung.getY() + hung.getYOffset(), z, 0, nearer, true, THING_REACH);
+				thing(cut, hung.getRenderable2(), hung.getX() + hung.getXOffset2(), hung.getY() + hung.getYOffset2(), z, 0, nearer, true, THING_REACH);
+			}
+
+			GroundObject low = tile.getGroundObject();
+			if (low != null)
+			{
+				thing(cut, low.getRenderable(), low.getX(), low.getY(), low.getZ(), 0, nearer(low.getX(), low.getY(), low.getZ()), false, THING_REACH);
+			}
+
+			ItemLayer pile = tile.getItemLayer();
+			if (pile != null)
+			{
+				int z = pile.getZ() - pile.getHeight();
+				boolean nearer = nearer(pile.getX(), pile.getY(), z);
+				thing(cut, pile.getBottom(), pile.getX(), pile.getY(), z, 0, nearer, true, THING_REACH);
+				thing(cut, pile.getMiddle(), pile.getX(), pile.getY(), z, 0, nearer, true, THING_REACH);
+				thing(cut, pile.getTop(), pile.getX(), pile.getY(), z, 0, nearer, true, THING_REACH);
+			}
+		}
+
+		/**
+		 * Wipes a player or a monster off the burst. self: the player's own character, which is always in front of the
+		 * beam.
+		 */
+		private void actor(Burst.Cut cut, Actor actor, boolean self)
+		{
+			LocalPoint where = actor.getLocalLocation();
+			if (where == null || Math.abs(where.getX() - standsX) > (AROUND + 2) * Perspective.LOCAL_TILE_SIZE
+				|| Math.abs(where.getY() - standsY) > (AROUND + 2) * Perspective.LOCAL_TILE_SIZE)
+			{
+				return;
+			}
+			int z = Perspective.getFootprintTileHeight(client, where, plane, actor.getFootprintSize());
+			thing(cut, actor, where.getX(), where.getY(), z, actor.getCurrentOrientation(), self || nearer(where.getX(), where.getY(), z), true,
+				THING_REACH + actor.getFootprintSize() * Perspective.LOCAL_TILE_SIZE / 2);
+		}
+
+		/**
+		 * Wipes one thing off the burst, face by face of its model, placed the way RuneLite's own outline drawing
+		 * places it. x, y, z: where it stands. nearer: whether it is between the character and the camera. lowToo:
+		 * false for scenery, where something that barely rises off the floor is taken as part of the floor. reach: how
+		 * far from where it stands it is taken to reach at most, in the game's units.
+		 */
+		private void thing(Burst.Cut cut, Renderable renderable, int x, int y, int z, int orientation, boolean nearer, boolean lowToo, int reach)
+		{
+			if (renderable == null)
+			{
+				return;
+			}
+			z -= renderable.getAnimationHeightOffset();
+			if (plain)
+			{
+				// Not worth working out the shape of something that is nowhere near the burst on screen
+				double away = onScreen(x, y, z, spot);
+				if (away < 0 || !cut.reaches(spot[0], spot[1], reach * scale / away + 4, nearer))
+				{
+					return;
+				}
+			}
+			Model model = renderable instanceof Model ? (Model) renderable : renderable.getModel();
 			if (model == null)
 			{
 				return;
 			}
 			int corners = model.getVerticesCount();
+			float[] heightOf = model.getVerticesY();
+			if (!lowToo)
+			{
+				// up is the smaller number
+				float highest = 0;
+				for (int i = 0; i < corners; i++)
+				{
+					highest = Math.min(highest, heightOf[i]);
+				}
+				if (-highest < FLOOR_THICK)
+				{
+					return;
+				}
+			}
 			if (cornerX.length < corners)
 			{
 				cornerX = new int[corners];
 				cornerY = new int[corners];
 			}
-			int height = Perspective.getFootprintTileHeight(client, at, world.getPlane(), me.getFootprintSize()) - me.getAnimationHeightOffset();
-			Perspective.modelToCanvas(client, world, corners, at.getX(), at.getY(), height, me.getCurrentOrientation(),
-				model.getVerticesX(), model.getVerticesZ(), model.getVerticesY(), cornerX, cornerY);
-			int[] first = model.getFaceIndices1();
-			int[] second = model.getFaceIndices2();
-			int[] third = model.getFaceIndices3();
-			byte[] clear = model.getFaceTransparencies();
-			int[] xs = new int[3];
-			int[] ys = new int[3];
-			for (int face = 0; face < model.getFaceCount(); face++)
-			{
-				int a = first[face];
-				int b = second[face];
-				int c = third[face];
-				// Skipped: a face that is see-through, or has a corner behind the camera
-				if (a < 0 || b < 0 || c < 0 || a >= corners || b >= corners || c >= corners || clear != null && (clear[face] & 0xFF) >= 254
-					|| cornerX[a] == Integer.MIN_VALUE || cornerX[b] == Integer.MIN_VALUE || cornerX[c] == Integer.MIN_VALUE)
-				{
-					continue;
-				}
-				xs[0] = cornerX[a];
-				xs[1] = cornerX[b];
-				xs[2] = cornerX[c];
-				ys[0] = cornerY[a];
-				ys[1] = cornerY[b];
-				ys[2] = cornerY[c];
-				sheet.fillPolygon(xs, ys, 3);
-			}
+			Perspective.modelToCanvas(client, world, corners, x, y, z, orientation, model.getVerticesX(), model.getVerticesZ(), heightOf, cornerX, cornerY);
+			cut.faces(cornerX, cornerY, corners, model.getFaceIndices1(), model.getFaceIndices2(), model.getFaceIndices3(), model.getFaceTransparencies(),
+				model.getFaceCount(), nearer);
 		}
 	}
 }

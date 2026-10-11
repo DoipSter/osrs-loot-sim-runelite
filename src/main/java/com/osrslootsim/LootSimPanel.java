@@ -37,6 +37,7 @@ import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.PluginPanel;
 import net.runelite.client.util.ImageUtil;
 import net.runelite.client.util.LinkBrowser;
+import net.runelite.client.util.SwingUtil;
 
 /**
  * The side panel: pick a boss, type a number of kills, press Simulate. Under it the run's loot, its value, the chance
@@ -106,6 +107,10 @@ final class LootSimPanel extends PluginPanel
 	private Runnable onLevelUp = () ->
 	{
 	};
+	// Opens the plugin's settings, when the cog in the header is pressed
+	private Runnable onSettings = () ->
+	{
+	};
 	// Closed until the player opens it, then as they left it for the runs that follow
 	private boolean dryOpen;
 	private String statusText = "";
@@ -123,7 +128,18 @@ final class LootSimPanel extends PluginPanel
 		title.setFont(FontManager.getRunescapeBoldFont());
 		title.setIcon(new ImageIcon(ImageUtil.resizeImage(ImageUtil.loadImageResource(LootSimPanel.class, "icon.png"), 20, 20)));
 		title.setIconTextGap(6);
-		addRow(title);
+		JButton settings = new JButton(new Cog(ColorScheme.LIGHT_GRAY_COLOR));
+		SwingUtil.removeButtonDecorations(settings);
+		settings.setRolloverEnabled(true);
+		settings.setRolloverIcon(new Cog(Color.WHITE));
+		settings.setBorder(BorderFactory.createEmptyBorder(3, 4, 3, 2));
+		settings.setToolTipText("Settings");
+		settings.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		settings.addActionListener(e -> onSettings.run());
+		JPanel header = clear(new JPanel(new BorderLayout(6, 0)));
+		header.add(title, BorderLayout.CENTER);
+		header.add(settings, BorderLayout.EAST);
+		addRow(header);
 
 		JPanel levelText = clear(new JPanel(new BorderLayout(6, 0)));
 		levelText.add(skillIcon, BorderLayout.WEST);
@@ -321,6 +337,11 @@ final class LootSimPanel extends PluginPanel
 	void onLevelUp(Runnable onLevelUp)
 	{
 		this.onLevelUp = onLevelUp;
+	}
+
+	void onSettings(Runnable onSettings)
+	{
+		this.onSettings = onSettings;
 	}
 
 	void simulate()

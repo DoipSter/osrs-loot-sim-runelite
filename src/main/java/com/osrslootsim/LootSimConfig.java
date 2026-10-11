@@ -24,6 +24,9 @@ public interface LootSimConfig extends Config
 	)
 	String IN_GAME = "inGame";
 
+	// The most the loot beam's value can be set to: 25m
+	int MOST_LOOT_VALUE = 25_000_000;
+
 	@ConfigItem(
 		keyName = "animatedIcon",
 		name = "Animated skill icon",
@@ -129,5 +132,31 @@ public interface LootSimConfig extends Config
 	default boolean collectionLogBeam()
 	{
 		return false;
+	}
+
+	@ConfigItem(
+		keyName = "lootBeam",
+		name = "On valuable loot",
+		description = "Show the loot beam under your character when the loot of one kill or chest is worth the amount below or more",
+		position = 23,
+		section = IN_GAME
+	)
+	default boolean lootBeam()
+	{
+		return false;
+	}
+
+	@Range(max = MOST_LOOT_VALUE)
+	@Units(" gp")
+	@ConfigItem(
+		keyName = "lootBeamValue",
+		name = "Loot worth at least",
+		description = "From 0 to 25,000,000 gp, at Grand Exchange prices, for all the loot of one kill or chest together. 0 is any loot",
+		position = 24,
+		section = IN_GAME
+	)
+	default int lootBeamValue()
+	{
+		return 1_000_000;
 	}
 }

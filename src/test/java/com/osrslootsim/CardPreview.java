@@ -3,27 +3,32 @@ package com.osrslootsim;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
-import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import javax.imageio.ImageIO;
 
 /**
  * Draws the insane-drop card and burst to a PNG without starting the game: the card on the left, then the burst at
- * five moments of its life under a stand-in character, on plain dark ground. Run it with "gradlew cardPreview" (see
- * build.gradle). Where they sit in the game, and the real character's outline, are the overlays' business and need
- * the game to see.
+ * five moments of its life, on plain dark ground. The top row is seen from the game's usual camera angle, the bottom
+ * row from a low one turned a little, where the floor runs away from the eye. In each a grey figure stands in for the
+ * character, a crate stands on the floor beside it (the burst must lie under it) and a post stands between the
+ * character and the camera (it must hide the beam). Run it with "gradlew cardPreview" (see build.gradle). The real
+ * floor and the real shapes of things are the overlay's business and need the game to see.
  */
 public final class CardPreview
 {
 	private static final long[] MOMENTS = {80, 250, 500, 1500, 3200};
+	private static final int COLUMN = 330;
+	private static final int ROW = 380;
+	// The stand-in character's head, as corners round a middle (the last corner)
+	private static final int HEAD_SIDES = 10;
 
 	public static void main(String[] args) throws Exception
 	{
 		String out = args.length > 0 ? args[0] : "build/cards.png";
 		String sprite = args.length > 1 ? args[1] : "";
 		Season season = args.length > 2 && !args[2].isEmpty() ? Season.valueOf(args[2].toUpperCase()) : Season.NONE;
-		DropCard.Glow glow = args.length > 3 && !args[3].isEmpty() ? DropCard.Glow.valueOf(args[3].toUpperCase()) : DropCard.Glow.GOLD;
+		Burst.Glow glow = args.length > 3 && !args[3].isEmpty() ? Burst.Glow.valueOf(args[3].toUpperCase()) : BeamColour.BY_HOLIDAY.glow(season);
 
 		DropCard.Drop drop = new DropCard.Drop("Avernic defender hilt");
 		File file = new File(sprite);
@@ -38,32 +43,24 @@ public final class CardPreview
 			drop.picture = box;
 		}
 
-		int column = 300;
-		int height = 380;
-		BufferedImage image = new BufferedImage(DropCard.WIDTH + 40 + column * MOMENTS.length, height, BufferedImage.TYPE_INT_RGB);
+		int left = DropCard.WIDTH + 40;
+		BufferedImage image = new BufferedImage(left + COLUMN * MOMENTS.length, 2 * ROW, BufferedImage.TYPE_INT_RGB);
 		Graphics2D g = image.createGraphics();
 		g.setColor(new Color(34, 40, 30));
 		g.fillRect(0, 0, image.getWidth(), image.getHeight());
 		DropCard.paintCard(g, 20, 120, drop, 1f);
-		for (int i = 0; i < MOMENTS.length; i++)
+		for (int row = 0; row < 2; row++)
 		{
-			int footX = DropCard.WIDTH + 40 + column * i + column / 2;
-			int footY = 270;
-			int headY = 180;
-			// The stand-in character: a grey figure 90 pixels tall, standing on a floor seen from the game's usual
-			// angle (a tile 70 pixels wide and 30 deep)
-			g.setColor(new Color(120, 120, 120));
-			g.fillOval(footX - 9, headY, 18, 18);
-			g.fillRect(footX - 7, headY + 18, 14, 72);
-			AffineTransform ground = new AffineTransform(70, 0, 0, -30, footX, footY);
-			Rectangle view = new Rectangle(DropCard.WIDTH + 40 + column * i, 0, column, height - 30);
-			DropCard.paintBurstBehind(g, view, ground, footX, footY, MOMENTS[i], 1f, season, glow, cut ->
+			for (int i = 0; i < MOMENTS.length; i++)
 			{
-				cut.fillOval(footX - 9, headY, 18, 18);
-				cut.fillRect(footX - 7, headY + 18, 14, 72);
-			});
-			g.setColor(new Color(200, 200, 200));
-			g.drawString(MOMENTS[i] + " ms", footX - 20, height - 10);
+				int footX = left + COLUMN * i + COLUMN / 2;
+				int footY = ROW * row + (row == 0 ? 250 : 270);
+				Stage stage = row == 0 ? new Stage(footX, footY, 62, 27, 0, 12) : new Stage(footX, footY, 74, 11, 25, 7);
+				Rectangle view = new Rectangle(left + COLUMN * i, ROW * row, COLUMN, ROW - 30);
+				scene(g, stage, view, footX, footY, MOMENTS[i], season, glow);
+				g.setColor(new Color(200, 200, 200));
+				g.drawString(MOMENTS[i] + " ms", footX - 20, ROW * (row + 1) - 10);
+			}
 		}
 		g.dispose();
 		File target = new File(out);
@@ -73,5 +70,56 @@ public final class CardPreview
 		}
 		ImageIO.write(image, "png", target);
 		System.out.println("wrote " + target.getAbsolutePath());
+	}
+
+	private static void scene(Graphics2D target, Stage stage, Rectangle view, int footX, int footY, long age, Season season, Burst.Glow glow)
+	{
+		Graphics2D g = (Graphics2D) target.create();
+		g.setClip(view);
+		// What stands in the scene, far to near: the crate, the character, the post
+		Stage.Box crate = stage.box(1.5, 0.7, 0.9, 0.8);
+		Stage.Box post = stage.box(0.1, -1.7, 0.3, 2.4);
+		int headY = footY - 90;
+		int[] xs = new int[HEAD_SIDES + 5];
+		int[] ys = new int[HEAD_SIDES + 5];
+		int[] first = new int[HEAD_SIDES + 2];
+		int[] second = new int[HEAD_SIDES + 2];
+		int[] third = new int[HEAD_SIDES + 2];
+		for (int k = 0; k < HEAD_SIDES; k++)
+		{
+			xs[k] = footX + (int) Math.round(9 * Math.cos(k * 2 * Math.PI / HEAD_SIDES));
+			ys[k] = headY + 9 + (int) Math.round(9 * Math.sin(k * 2 * Math.PI / HEAD_SIDES));
+			first[k] = HEAD_SIDES;
+			second[k] = k;
+			third[k] = (k + 1) % HEAD_SIDES;
+		}
+		xs[HEAD_SIDES] = footX;
+		ys[HEAD_SIDES] = headY + 9;
+		int body = HEAD_SIDES + 1;
+		int[][] corners = {{-7, headY + 18}, {7, headY + 18}, {7, footY}, {-7, footY}};
+		for (int k = 0; k < 4; k++)
+		{
+			xs[body + k] = footX + corners[k][0];
+			ys[body + k] = corners[k][1];
+		}
+		first[HEAD_SIDES] = body;
+		second[HEAD_SIDES] = body + 1;
+		third[HEAD_SIDES] = body + 2;
+		first[HEAD_SIDES + 1] = body;
+		second[HEAD_SIDES + 1] = body + 2;
+		third[HEAD_SIDES + 1] = body + 3;
+
+		crate.draw(g, new Color(150, 104, 58));
+		g.setColor(new Color(120, 120, 120));
+		g.fillOval(footX - 9, headY, 18, 18);
+		g.fillRect(footX - 7, headY + 18, 14, 72);
+		post.draw(g, new Color(96, 100, 110));
+		Burst.paint(g, view, stage, age, 1f, season, glow, cut ->
+		{
+			crate.cut(cut, false);
+			cut.faces(xs, ys, xs.length, first, second, third, null, first.length, true);
+			post.cut(cut, true);
+		});
+		g.dispose();
 	}
 }

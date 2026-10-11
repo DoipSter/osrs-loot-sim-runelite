@@ -2,7 +2,10 @@ package com.osrslootsim;
 
 import com.google.gson.Gson;
 import com.google.inject.Provides;
+import java.awt.Dimension;
+import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
+import java.util.Collection;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Locale;
@@ -13,6 +16,7 @@ import javax.swing.SwingUtilities;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.MenuAction;
 import net.runelite.api.Player;
 import net.runelite.api.ScriptID;
 import net.runelite.api.Skill;
@@ -24,19 +28,27 @@ import net.runelite.api.gameval.VarClientID;
 import net.runelite.client.audio.AudioPlayer;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.eventbus.EventBus;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
+import net.runelite.client.events.NpcLootReceived;
+import net.runelite.client.events.OverlayMenuClicked;
+import net.runelite.client.events.PlayerLootReceived;
 import net.runelite.client.events.RuneScapeProfileChanged;
 import net.runelite.client.game.ItemManager;
+import net.runelite.client.game.ItemStack;
 import net.runelite.client.game.SpriteManager;
 import net.runelite.client.hiscore.HiscoreClient;
 import net.runelite.client.hiscore.HiscoreEndpoint;
 import net.runelite.client.hiscore.HiscoreSkill;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.plugins.loottracker.LootReceived;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
+import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.ui.overlay.OverlayMenuEntry;
 import net.runelite.client.util.ImageUtil;
 import okhttp3.OkHttpClient;
 
@@ -101,6 +113,9 @@ public class LootSimPlugin extends Plugin implements Account
 	@Inject
 	private AudioPlayer audioPlayer;
 
+	@Inject
+	private EventBus eventBus;
+
 	private LootSimPanel panel;
 	private NavigationButton navButton;
 	private DropPopups popups;
@@ -110,6 +125,16 @@ public class LootSimPlugin extends Plugin implements Account
 	private final Map<Skill, Integer> levels = new EnumMap<>(Skill.class);
 	// The game's pop-up at the top of the screen is announced in two steps: the second reads what the first set up
 	private boolean notificationStarted;
+	// Never shown. RuneLite opens a plugin's settings when "Configure" is picked on one of the plugin's overlays, and
+	// gives plugins no other way to ask for that: this is the overlay it is told about.
+	private final Overlay settingsHandle = new Overlay(this)
+	{
+		@Override
+		public Dimension render(Graphics2D graphics)
+		{
+			return null;
+		}
+	};
 
 	@Provides
 	LootSimConfig provideConfig(ConfigManager configManager)
@@ -121,10 +146,12 @@ public class LootSimPlugin extends Plugin implements Account
 	protected void startUp()
 	{
 		GameIcons icons = new GameIcons(client, clientThread, itemManager, spriteManager);
-		popups = new DropPopups(client, config, icons, overlayManager, audioPlayer);
+		popups = new DropPopups(client, clientThread, config, icons, overlayManager, audioPlayer);
 		popups.start();
 		panel = new LootSimPanel(new LootSimApi(okHttpClient, gson), icons, this, config);
 		panel.onRun(popups::ran);
+		panel.onSettings(() -> eventBus.post(new OverlayMenuClicked(
+			new OverlayMenuEntry(MenuAction.RUNELITE_OVERLAY_CONFIG, OverlayManager.OPTION_CONFIGURE, getName()), settingsHandle)));
 		panel.onLevelUp(() ->
 		{
 			if (config.levelUpBeam())
@@ -194,6 +221,47 @@ public class LootSimPlugin extends Plugin implements Account
 	{
 		if (event.getType() == ChatMessageType.GAMEMESSAGE && config.collectionLogBeam() && popups != null
 			&& net.runelite.client.util.Text.removeTags(event.getMessage()).startsWith(COLLECTION_LOG_CHAT))
+		{
+			popups.burst();
+		}
+	}
+
+	@Subscribe
+	public void onNpcLootReceived(NpcLootReceived event)
+	{
+		looted(event.getItems());
+	}
+
+	@Subscribe
+	public void onPlayerLootReceived(PlayerLootReceived event)
+	{
+		looted(event.getItems());
+	}
+
+	// Chests, raids, clues and the rest, as RuneLite's own Loot Tracker plugin reports them while it is switched on.
+	// It reports kills too: two reports of one kill are one burst.
+	@Subscribe
+	public void onLootReceived(LootReceived event)
+	{
+		looted(event.getItems());
+	}
+
+	/**
+	 * Loot arrived in the game: shows the loot beam when that is switched on and the loot is worth enough, all of it
+	 * together at Grand Exchange prices.
+	 */
+	private void looted(Collection<ItemStack> items)
+	{
+		if (!config.lootBeam() || popups == null || items == null || items.isEmpty())
+		{
+			return;
+		}
+		long worth = 0;
+		for (ItemStack item : items)
+		{
+			worth += (long) itemManager.getItemPrice(item.getId()) * item.getQuantity();
+		}
+		if (worth >= Math.max(0, Math.min(LootSimConfig.MOST_LOOT_VALUE, config.lootBeamValue())))
 		{
 			popups.burst();
 		}

@@ -19,23 +19,23 @@ public enum BeamColour
 		this.name = name;
 	}
 
-	DropCard.Glow glow(Season season)
+	Burst.Glow glow(Season season)
 	{
 		switch (this)
 		{
 			case GOLD:
-				return DropCard.Glow.GOLD;
+				return Burst.Glow.GOLD;
 			case PURPLE:
-				return DropCard.Glow.PURPLE;
+				return Burst.Glow.PURPLE;
 			case AUTUMN:
-				return DropCard.Glow.AUTUMN;
+				return Burst.Glow.AUTUMN;
 			case ICE:
-				return DropCard.Glow.ICE;
+				return Burst.Glow.ICE;
 			default:
-				return season == Season.HALLOWEEN ? DropCard.Glow.PURPLE
-					: season == Season.THANKSGIVING ? DropCard.Glow.AUTUMN
-					: season == Season.CHRISTMAS ? DropCard.Glow.ICE
-					: DropCard.Glow.GOLD;
+				return season == Season.HALLOWEEN ? Burst.Glow.PURPLE
+					: season == Season.THANKSGIVING ? Burst.Glow.AUTUMN
+					: season == Season.CHRISTMAS ? Burst.Glow.ICE
+					: Burst.Glow.GOLD;
 		}
 	}
 
