@@ -27,6 +27,9 @@ public interface LootSimConfig extends Config
 	// The most the loot beam's value can be set to: 25m
 	int MOST_LOOT_VALUE = 25_000_000;
 
+	// The bosses pinned under the boss box until the player pins their own
+	String FIRST_PINS = "Vorkath,Zulrah,Chambers of Xeric,Theatre of Blood,Tombs of Amascut";
+
 	@ConfigItem(
 		keyName = "animatedIcon",
 		name = "Animated skill icon",
@@ -159,4 +162,23 @@ public interface LootSimConfig extends Config
 	{
 		return 1_000_000;
 	}
+
+	// Kept by the panel, not shown among the settings: the pinned bosses' names with commas between them
+	@ConfigItem(
+		keyName = "pinnedBosses",
+		name = "",
+		description = "",
+		hidden = true
+	)
+	default String pinnedBosses()
+	{
+		return FIRST_PINS;
+	}
+
+	@ConfigItem(
+		keyName = "pinnedBosses",
+		name = "",
+		description = ""
+	)
+	void pinnedBosses(String names);
 }

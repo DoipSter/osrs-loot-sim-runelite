@@ -20,6 +20,8 @@ kills and press Simulate.
   and is separate from the level on the website. Its icon plays the site's loot beam and dresses for Halloween,
   Thanksgiving and Christmas. In the settings the movement can be switched off, and the holiday look can follow the
   season, stay off, or be one holiday all year.
+- Pin up to five bosses or raids with the pin at the end of their row in the boss list. They get a button each under
+  the boss box, one press away. Press the pin again, or right-click the button, to unpin.
 - The cog at the top of the panel opens the plugin's settings.
 
 ## What it sends

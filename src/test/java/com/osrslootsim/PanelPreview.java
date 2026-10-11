@@ -51,9 +51,7 @@ public final class PanelPreview
 		LootSimPanel[] made = new LootSimPanel[1];
 		SwingUtilities.invokeAndWait(() ->
 		{
-			made[0] = new LootSimPanel(new LootSimApi(new OkHttpClient(), new Gson()), new FileIcons(site), account, new LootSimConfig()
-			{
-			});
+			made[0] = new LootSimPanel(new LootSimApi(new OkHttpClient(), new Gson()), new FileIcons(site), account, new FakeConfig());
 			made[0].onActivate();
 		});
 		LootSimPanel panel = made[0];
@@ -69,6 +67,22 @@ public final class PanelPreview
 			picker.type("");
 		});
 		draw(panel, out.replace(".png", "-empty.png"));
+
+		// Pins: five are pinned to start with, so a sixth is refused; with one unpinned another boss takes its place
+		SwingUtilities.invokeAndWait(() ->
+		{
+			List<String> rows = picker.shown();
+			picker.pin(rows.indexOf("Nex"));
+			System.out.println("a sixth pin: " + panel.pins());
+			picker.pin(rows.indexOf("Vorkath"));
+			picker.pin(rows.indexOf("Clue scroll (hard)"));
+			System.out.println("one unpinned, a clue pressed: " + panel.pins());
+			picker.pin(rows.indexOf("Nex"));
+			System.out.println("a boss pinned in its place: " + panel.pins());
+		});
+		draw(panel, out.replace(".png", "-pins.png"));
+		SwingUtilities.invokeAndWait(() -> picker.pin(picker.shown().indexOf("Zulrah")));
+		draw(panel, out.replace(".png", "-pins-four.png"));
 		for (String text : new String[]{"cox", "vork", "gob", "clue", "zzzz", "ab"})
 		{
 			SwingUtilities.invokeAndWait(() ->
@@ -165,6 +179,24 @@ public final class PanelPreview
 					layout(child);
 				}
 			}
+		}
+	}
+
+	// Settings as they are before a player changes any; the pins are kept for as long as the preview runs
+	private static final class FakeConfig implements LootSimConfig
+	{
+		private String pins = FIRST_PINS;
+
+		@Override
+		public String pinnedBosses()
+		{
+			return pins;
+		}
+
+		@Override
+		public void pinnedBosses(String names)
+		{
+			pins = names;
 		}
 	}
 

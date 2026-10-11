@@ -27,7 +27,9 @@ import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
+import javax.swing.JMenuItem;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.JTextField;
 import javax.swing.SwingConstants;
 import javax.swing.Timer;
@@ -45,8 +47,8 @@ import net.runelite.client.util.SwingUtil;
  */
 final class LootSimPanel extends PluginPanel
 {
-	// One press each for the bosses people simulate most; the picker under them lists the rest
-	private static final String[] QUICK = {"Vorkath", "Zulrah", "Chambers of Xeric", "Theatre of Blood", "Tombs of Amascut"};
+	// What the boss box lists until the site's own list arrives: the bosses a new player finds pinned
+	private static final List<String> USUAL = Arrays.asList(LootSimConfig.FIRST_PINS.split(","));
 	private static final int COLUMNS = 5;
 	private static final int MAX_CELLS = 50;
 	private static final int DEFAULT_MAX_KILLS = 1000;
@@ -71,7 +73,10 @@ final class LootSimPanel extends PluginPanel
 	private final JPanel levelPanel = new JPanel(new BorderLayout(0, 3));
 
 	private final BossPicker picker;
-	private final Map<String, JButton> quickButtons = new LinkedHashMap<>();
+	// The bosses pinned under the boss box, in the order they were pinned, and the row of buttons that picks them
+	private final List<String> pins = new ArrayList<>();
+	private final JPanel pinRow = clear(new JPanel(new GridLayout(1, BossPicker.MOST_PINS, 4, 0)));
+	private final Map<String, JButton> pinButtons = new LinkedHashMap<>();
 	private final OptionsBar optionsBar = new OptionsBar();
 	// The options rows already fetched, by boss
 	private final Map<String, List<LootSimApi.Option>> optionLists = new HashMap<>();
@@ -150,25 +155,13 @@ final class LootSimPanel extends PluginPanel
 		levelPanel.add(levelBar, BorderLayout.SOUTH);
 		addRow(levelPanel);
 
-		picker = new BossPicker(icons, Arrays.asList(QUICK), QUICK[0]);
+		pins.addAll(savedPins());
+		picker = new BossPicker(icons, USUAL, pins.isEmpty() ? USUAL.get(0) : pins.get(0));
 		picker.onChange(this::bossChanged);
+		picker.onPin(this::pin);
 		addRow(picker);
-
-		JPanel quick = clear(new JPanel(new GridLayout(1, QUICK.length, 4, 0)));
-		for (String name : QUICK)
-		{
-			JButton button = new JButton();
-			button.setToolTipText(name);
-			button.getAccessibleContext().setAccessibleName(name);
-			button.setPreferredSize(new Dimension(0, 30));
-			button.setFocusPainted(false);
-			button.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-			button.addActionListener(e -> picker.select(name));
-			icons.boss(name, image -> button.setIcon(new ImageIcon(image)));
-			quickButtons.put(name, button);
-			quick.add(button);
-		}
-		addRow(quick);
+		addRow(pinRow);
+		showPins();
 		addRow(optionsBar);
 
 		JLabel killsLabel = label("Kills", ColorScheme.LIGHT_GRAY_COLOR);
@@ -275,6 +268,13 @@ final class LootSimPanel extends PluginPanel
 	void settingsChanged()
 	{
 		dressIcon();
+		List<String> saved = savedPins();
+		if (!saved.equals(pins))   // the settings were reset, or another profile was loaded
+		{
+			pins.clear();
+			pins.addAll(saved);
+			showPins();
+		}
 	}
 
 	SkillIcon skillIcon()
@@ -322,6 +322,11 @@ final class LootSimPanel extends PluginPanel
 	BossPicker picker()
 	{
 		return picker;
+	}
+
+	List<String> pins()
+	{
+		return new ArrayList<>(pins);
 	}
 
 	OptionsBar optionsBar()
@@ -570,13 +575,90 @@ final class LootSimPanel extends PluginPanel
 
 	private void bossChanged()
 	{
-		String selected = picker.selected();
-		for (Map.Entry<String, JButton> quick : quickButtons.entrySet())
-		{
-			boolean on = quick.getKey().equals(selected);
-			quick.getValue().setBorder(BorderFactory.createLineBorder(on ? ColorScheme.BRAND_ORANGE : ColorScheme.DARKER_GRAY_COLOR));
-		}
+		markPicked();
 		loadOptions();
+	}
+
+	// The picked boss's button, when the boss is pinned, has an orange edge
+	private void markPicked()
+	{
+		String selected = picker.selected();
+		for (Map.Entry<String, JButton> pin : pinButtons.entrySet())
+		{
+			boolean on = pin.getKey().equals(selected);
+			pin.getValue().setBorder(BorderFactory.createLineBorder(on ? ColorScheme.BRAND_ORANGE : ColorScheme.DARKER_GRAY_COLOR));
+		}
+	}
+
+	/**
+	 * The pinned bosses as the settings hold them: MOST_PINS at most, each once, and bosses only.
+	 */
+	private List<String> savedPins()
+	{
+		List<String> names = new ArrayList<>();
+		for (String saved : String.valueOf(config.pinnedBosses()).split(","))
+		{
+			String name = Text.plain(saved, 60);
+			if (names.size() < BossPicker.MOST_PINS && !names.contains(name) && Hiscores.boss(name))
+			{
+				names.add(name);
+			}
+		}
+		return names;
+	}
+
+	/**
+	 * A boss's pin was pressed: pins the boss, or unpins it when it was pinned. One more than MOST_PINS is not pinned.
+	 */
+	private void pin(String boss)
+	{
+		if (!pins.remove(boss))
+		{
+			if (pins.size() >= BossPicker.MOST_PINS || !Hiscores.boss(boss))
+			{
+				return;
+			}
+			pins.add(boss);
+		}
+		config.pinnedBosses(String.join(",", pins));
+		showPins();
+	}
+
+	/**
+	 * Fills the row under the boss box: a button with each pinned boss's picture, which picks that boss. Right-click
+	 * one to unpin it. With nothing pinned the row is hidden.
+	 */
+	private void showPins()
+	{
+		pinRow.removeAll();
+		pinButtons.clear();
+		for (String name : pins)
+		{
+			JButton button = new JButton();
+			button.setToolTipText(name);
+			button.getAccessibleContext().setAccessibleName(name);
+			button.setPreferredSize(new Dimension(0, 30));
+			button.setFocusPainted(false);
+			button.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+			button.addActionListener(e -> picker.select(name));
+			icons.boss(name, image -> button.setIcon(new ImageIcon(image)));
+			JMenuItem unpin = new JMenuItem("Unpin");
+			unpin.addActionListener(e -> pin(name));
+			JPopupMenu menu = new JPopupMenu();
+			menu.add(unpin);
+			button.setComponentPopupMenu(menu);
+			pinButtons.put(name, button);
+			pinRow.add(button);
+		}
+		for (int empty = pins.size(); empty < BossPicker.MOST_PINS; empty++)
+		{
+			pinRow.add(clear(new JPanel()));   // so a button is a fifth of the row wide however many there are
+		}
+		pinRow.setVisible(!pins.isEmpty());
+		picker.showPins(pins);
+		markPicked();
+		revalidate();
+		repaint();
 	}
 
 	/**
@@ -612,7 +694,7 @@ final class LootSimPanel extends PluginPanel
 
 	/**
 	 * Asks the site for the boss box's lists the first time the panel is opened. Until they arrive, and if they never
-	 * do, the box holds the five quick bosses.
+	 * do, the box holds five well-known ones.
 	 */
 	private void loadBosses()
 	{
@@ -638,10 +720,7 @@ final class LootSimPanel extends PluginPanel
 					names.add(name);
 				}
 			}
-			for (String name : QUICK)
-			{
-				names.add(name);
-			}
+			names.addAll(USUAL);
 			List<String> all = new ArrayList<>();
 			if (list.all != null)
 			{

@@ -7,6 +7,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import net.runelite.client.hiscore.HiscoreSkill;
+import net.runelite.client.hiscore.HiscoreSkillType;
 
 /**
  * Matches the simulator's names for bosses, raids and clues to their rows on the official hiscores.
@@ -42,6 +43,16 @@ final class Hiscores
 		String name = source.toLowerCase(Locale.ENGLISH);
 		HiscoreSkill row = find(name.startsWith("clue scroll (") ? "clue scrolls (all)" : NAMES.getOrDefault(name, name));
 		return row != null && row.getSpriteId() > 0 ? row : null;
+	}
+
+	/**
+	 * True for a source with a boss's row on the hiscores, raids among them: what the panel lets a player pin. Clues,
+	 * minigames, chests and ordinary monsters have none.
+	 */
+	static boolean boss(String source)
+	{
+		HiscoreSkill row = picture(source);
+		return row != null && row.getType() == HiscoreSkillType.BOSS;
 	}
 
 	/**

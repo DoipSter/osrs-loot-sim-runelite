@@ -3,10 +3,12 @@ package com.osrslootsim;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.event.ActionEvent;
 import java.awt.event.FocusAdapter;
@@ -15,6 +17,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -24,6 +27,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
@@ -38,7 +42,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.KeyStroke;
 import javax.swing.ListSelectionModel;
-import javax.swing.SwingConstants;
+import javax.swing.border.Border;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import net.runelite.client.ui.ColorScheme;
@@ -47,7 +51,7 @@ import net.runelite.client.ui.FontManager;
 /**
  * The boss box at the top of the panel: a search bar that is also a drop-down. Click it, or its arrow, and it lists
  * the usual bosses; type and it lists every boss, raid, chest, clue and monster whose name fits. The list opens
- * inside the panel, under the box.
+ * inside the panel, under the box. A boss's row ends in a pin, which keeps the boss in the row under the box.
  */
 final class BossPicker extends JPanel
 {
@@ -59,15 +63,36 @@ final class BossPicker extends JPanel
 	private static final Icon GLASS = new Glass();
 	private static final Font SMALL = FontManager.getRunescapeSmallFont();
 
+	// The most bosses that can be pinned: one row of the panel
+	static final int MOST_PINS = 5;
+	// The right end of a boss's row, where its pin is and a press pins instead of picking
+	private static final int PIN_ROOM = 24;
+	private static final Icon PINNED = new Pin(ColorScheme.BRAND_ORANGE, true);
+	private static final Icon PINNED_UNDER_MOUSE = new Pin(new Color(255, 190, 90), true);
+	private static final Icon PIN = new Pin(new Color(125, 125, 125), false);
+	private static final Icon PIN_UNDER_MOUSE = new Pin(Color.WHITE, false);
+	private static final Icon PIN_NO_ROOM = new Pin(new Color(70, 70, 70), false);
+	private static final Border PLAIN_ROW = BorderFactory.createEmptyBorder(0, 6, 0, 4);
+	private static final Border BOSS_ROW = BorderFactory.createEmptyBorder(0, 6, 0, PIN_ROOM);
+
 	private final Icons icons;
 	private final JLabel picture = new JLabel(NO_ICON);
 	private final JTextField field = new JTextField();
 	private final JButton arrow = new JButton(new Chevron(true));
 	private final DefaultListModel<String> results = new DefaultListModel<>();
-	private final JList<String> list = new JList<>(results);
+	private final JList<String> list = new JList<String>(results)
+	{
+		@Override
+		public String getToolTipText(MouseEvent e)
+		{
+			return pinTip(e);
+		}
+	};
 	private final JScrollPane scroll = new JScrollPane(list);
 	private final Map<String, Icon> pictures = new HashMap<>();
 	private final Set<String> asked = new HashSet<>();
+	// Whether a name is a boss, and so has a pin, for the names looked up so far
+	private final Map<String, Boolean> bosses = new HashMap<>();
 
 	// What the list shows before anything is typed, and everything a search looks through. Short names ("cox",
 	// "toa") lead to the source they stand for.
@@ -82,6 +107,13 @@ final class BossPicker extends JPanel
 	private boolean open;
 	private boolean typed;
 	private boolean settingText;
+
+	private Set<String> pinned = new HashSet<>();
+	private Consumer<String> onPin = name ->
+	{
+	};
+	// The row whose pin the mouse is over, or -1
+	private int pinUnderMouse = -1;
 
 	BossPicker(Icons icons, List<String> usual, String selected)
 	{
@@ -122,6 +154,7 @@ final class BossPicker extends JPanel
 		list.setFixedCellWidth(100);   // any width: the list is stretched to the box, and a fixed one spares measuring every row
 		list.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		list.setCellRenderer(new Row());
+		list.setToolTipText("");   // switches tips on for the list: getToolTipText above has one for a pin only
 		scroll.setBorder(BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR));
 		scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 		scroll.getVerticalScrollBar().setFocusable(false);
@@ -193,18 +226,29 @@ final class BossPicker extends JPanel
 			@Override
 			public void mouseMoved(MouseEvent e)
 			{
-				int row = list.locationToIndex(e.getPoint());
-				if (row >= 0 && list.getCellBounds(row, row).contains(e.getPoint()))
+				int row = rowAt(e);
+				if (row >= 0)
 				{
 					list.setSelectedIndex(row);
 				}
+				pinUnderMouse(overPin(e, row) ? row : -1);
+			}
+
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				pinUnderMouse(-1);
 			}
 
 			@Override
 			public void mouseReleased(MouseEvent e)
 			{
-				int row = list.locationToIndex(e.getPoint());
-				if (row >= 0 && list.getCellBounds(row, row).contains(e.getPoint()))
+				int row = rowAt(e);
+				if (overPin(e, row))
+				{
+					pin(row);   // the list stays open: several can be pinned in one go
+				}
+				else if (row >= 0)
 				{
 					choose(row);
 				}
@@ -227,7 +271,24 @@ final class BossPicker extends JPanel
 	}
 
 	/**
-	 * Picks a boss from outside the box: a quick button, or the list arriving from the site.
+	 * Told the name of a boss whose pin is pressed, pinned or not.
+	 */
+	void onPin(Consumer<String> onPin)
+	{
+		this.onPin = onPin;
+	}
+
+	/**
+	 * The bosses that are pinned: their pins are lit, and with MOST_PINS of them the other pins are greyed.
+	 */
+	void showPins(Collection<String> pinned)
+	{
+		this.pinned = new HashSet<>(pinned);
+		list.repaint();
+	}
+
+	/**
+	 * Picks a boss from outside the box: a pinned boss's button.
 	 */
 	void select(String name)
 	{
@@ -293,6 +354,63 @@ final class BossPicker extends JPanel
 		field.transferFocus();   // on to the next control, so a later click on the box starts a fresh search
 	}
 
+	/**
+	 * Presses the pin of a row of the open list. Nothing happens when the row is not a boss.
+	 */
+	void pin(int row)
+	{
+		if (open && row >= 0 && row < results.size() && boss(results.get(row)))
+		{
+			onPin.accept(results.get(row));
+		}
+	}
+
+	private boolean boss(String name)
+	{
+		return bosses.computeIfAbsent(name, Hiscores::boss);
+	}
+
+	// The row of the list the mouse is on, or -1 when it is under the last row
+	private int rowAt(MouseEvent e)
+	{
+		int row = list.locationToIndex(e.getPoint());
+		return row >= 0 && list.getCellBounds(row, row).contains(e.getPoint()) ? row : -1;
+	}
+
+	private boolean overPin(MouseEvent e, int row)
+	{
+		if (row < 0 || !boss(results.get(row)))
+		{
+			return false;
+		}
+		Rectangle cell = list.getCellBounds(row, row);
+		return e.getX() >= cell.x + cell.width - PIN_ROOM;
+	}
+
+	private void pinUnderMouse(int row)
+	{
+		if (row != pinUnderMouse)
+		{
+			pinUnderMouse = row;
+			list.setCursor(Cursor.getPredefinedCursor(row < 0 ? Cursor.DEFAULT_CURSOR : Cursor.HAND_CURSOR));
+			list.repaint();
+		}
+	}
+
+	private String pinTip(MouseEvent e)
+	{
+		int row = rowAt(e);
+		if (!overPin(e, row))
+		{
+			return null;
+		}
+		if (pinned.contains(results.get(row)))
+		{
+			return "Unpin";
+		}
+		return pinned.size() < MOST_PINS ? "Pin under the box" : MOST_PINS + " are pinned: unpin one first";
+	}
+
 	private void edited()
 	{
 		if (settingText)
@@ -343,6 +461,7 @@ final class BossPicker extends JPanel
 		String text = field.getText().trim();
 		List<String> rows = typed && !text.isEmpty() ? search(text) : usual;
 		results.clear();
+		pinUnderMouse = -1;   // the rows are other rows now
 		for (String name : rows)
 		{
 			results.addElement(name);
@@ -470,10 +589,12 @@ final class BossPicker extends JPanel
 	}
 
 	/**
-	 * A row of the list: the boss's hiscores picture, when it has one, and its name.
+	 * A row of the list: the boss's hiscores picture, when it has one, its name and, on a boss, its pin.
 	 */
 	private final class Row extends DefaultListCellRenderer
 	{
+		private Icon pin;
+
 		@Override
 		public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean hasFocus)
 		{
@@ -484,12 +605,27 @@ final class BossPicker extends JPanel
 			setFont(SMALL);
 			setIcon(none ? NO_ICON : picture(name));
 			setIconTextGap(8);
-			setBorder(BorderFactory.createEmptyBorder(0, 6, 0, 4));
+			boolean over = index == pinUnderMouse;
+			pin = none || !boss(name) ? null
+				: pinned.contains(name) ? (over ? PINNED_UNDER_MOUSE : PINNED)
+				: pinned.size() >= MOST_PINS ? PIN_NO_ROOM
+				: over ? PIN_UNDER_MOUSE : PIN;
+			setBorder(pin == null ? PLAIN_ROW : BOSS_ROW);   // a long name stops short of the pin
 			if (none)
 			{
 				setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 			}
 			return this;
+		}
+
+		@Override
+		protected void paintComponent(Graphics g)
+		{
+			super.paintComponent(g);
+			if (pin != null)
+			{
+				pin.paintIcon(this, g, getWidth() - PIN_ROOM + (PIN_ROOM - pin.getIconWidth()) / 2, (getHeight() - pin.getIconHeight()) / 2);
+			}
 		}
 	}
 
