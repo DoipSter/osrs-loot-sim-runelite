@@ -150,7 +150,7 @@ final class LootSimPanel extends PluginPanel
 		killsField.addActionListener(e -> simulate());
 		kcButton.setFont(SMALL);
 		kcButton.setFocusPainted(false);
-		kcButton.setToolTipText("Fill in your own kill count for this boss");
+		kcButton.setToolTipText("Fill in your own kill count for this boss, from the hiscores");
 		kcButton.addActionListener(e -> fillKillCount());
 		JPanel killsRow = clear(new JPanel(new BorderLayout(6, 0)));
 		killsRow.add(killsLabel, BorderLayout.WEST);
@@ -484,14 +484,24 @@ final class LootSimPanel extends PluginPanel
 			say("Log in first: kill counts are saved per account.");
 			return;
 		}
-		Integer count = account.killCount(boss);
-		if (count == null)
+		say("Looking up your kill count...");
+		kcButton.setEnabled(false);
+		account.killCount(boss, count ->
 		{
-			say("No kill count saved for " + boss + " yet. RuneLite reads it from chat after a kill.");
-			return;
-		}
-		killsField.setText(String.valueOf(Math.min(count, maxKills)));
-		say(count > maxKills ? "Your count is " + Text.number(count) + ". One run goes up to " + Text.number(maxKills) + "." : "");
+			kcButton.setEnabled(true);
+			if (!boss.equals(picker.selected()))
+			{
+				say("");   // another boss was picked while the hiscores answered
+				return;
+			}
+			if (count == null)
+			{
+				say("No kill count found for " + boss + ". The hiscores list a boss only after a minimum number of kills.");
+				return;
+			}
+			killsField.setText(String.valueOf(Math.min(count, maxKills)));
+			say(count > maxKills ? "Your count is " + Text.number(count) + ". One run goes up to " + Text.number(maxKills) + "." : "");
+		});
 	}
 
 	private int kills()

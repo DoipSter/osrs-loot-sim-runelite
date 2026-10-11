@@ -182,9 +182,9 @@ public final class PanelPreview
 		}
 
 		@Override
-		public Integer killCount(String boss)
+		public void killCount(String boss, Consumer<Integer> answer)
 		{
-			return 2300;
+			answer.accept(2300);
 		}
 	}
 

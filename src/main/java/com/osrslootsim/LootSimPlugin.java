@@ -6,9 +6,11 @@ import java.awt.image.BufferedImage;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Consumer;
 import javax.inject.Inject;
 import javax.swing.SwingUtilities;
 import net.runelite.api.Client;
+import net.runelite.api.Player;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -16,6 +18,10 @@ import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.events.RuneScapeProfileChanged;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.SpriteManager;
+import net.runelite.client.hiscore.HiscoreClient;
+import net.runelite.client.hiscore.HiscoreEndpoint;
+import net.runelite.client.hiscore.HiscoreSkill;
+import net.runelite.client.hiscore.Skill;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
@@ -71,6 +77,9 @@ public class LootSimPlugin extends Plugin implements Account
 
 	@Inject
 	private LootSimConfig config;
+
+	@Inject
+	private HiscoreClient hiscoreClient;
 
 	private LootSimPanel panel;
 	private NavigationButton navButton;
@@ -160,9 +169,40 @@ public class LootSimPlugin extends Plugin implements Account
 	}
 
 	@Override
-	public Integer killCount(String boss)
+	public void killCount(String boss, Consumer<Integer> answer)
 	{
-		if (!known())
+		Integer saved = savedKillCount(boss);
+		HiscoreSkill row = Hiscores.count(boss);
+		if (row == null)
+		{
+			answer.accept(saved);
+			return;
+		}
+		// The official hiscores, asked the way RuneLite's own Hiscore panel asks them: by the character's name
+		clientThread.invoke(() ->
+		{
+			Player player = client.getLocalPlayer();
+			String name = player == null ? null : player.getName();
+			if (name == null)
+			{
+				SwingUtilities.invokeLater(() -> answer.accept(saved));
+				return;
+			}
+			hiscoreClient.lookupAsync(name, HiscoreEndpoint.fromWorldTypes(client.getWorldType())).whenComplete((result, error) ->
+			{
+				Skill listed = result == null ? null : result.getSkill(row);
+				int count = Math.max(saved == null ? 0 : saved, listed == null ? 0 : listed.getLevel());
+				SwingUtilities.invokeLater(() -> answer.accept(count > 0 ? count : null));
+			});
+		});
+	}
+
+	/**
+	 * The kill count RuneLite last read from chat for a boss, or null.
+	 */
+	private Integer savedKillCount(String boss)
+	{
+		if (!known() || Hiscores.otherUnit(boss))
 		{
 			return null;
 		}

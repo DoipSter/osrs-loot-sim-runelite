@@ -26,19 +26,6 @@ final class GameIcons implements Icons
 {
 	private static final int ITEMS_PER_FRAME = 2500;
 
-	// The simulator's names for sources the hiscores spell another way. Every clue tier shares the hiscores' one clue
-	// picture.
-	private static final Map<String, String> HISCORE_NAMES = new HashMap<>();
-
-	static
-	{
-		HISCORE_NAMES.put("barrows", "barrows chests");
-		HISCORE_NAMES.put("the nightmare", "nightmare");
-		HISCORE_NAMES.put("moons of peril", "lunar chests");
-		HISCORE_NAMES.put("fortis colosseum", "sol heredit");
-		HISCORE_NAMES.put("guardians of the rift", "rifts closed");
-	}
-
 	private final Client client;
 	private final ClientThread clientThread;
 	private final ItemManager itemManager;
@@ -75,15 +62,10 @@ final class GameIcons implements Icons
 	@Override
 	public void boss(String name, Consumer<BufferedImage> use)
 	{
-		String key = name.toLowerCase(Locale.ENGLISH);
-		String wanted = key.startsWith("clue scroll (") ? "clue scrolls (all)" : HISCORE_NAMES.getOrDefault(key, key);
-		for (HiscoreSkill skill : HiscoreSkill.values())
+		HiscoreSkill row = Hiscores.picture(name);
+		if (row != null)
 		{
-			if (skill.getSpriteId() > 0 && skill.getName().toLowerCase(Locale.ENGLISH).equals(wanted))
-			{
-				spriteManager.getSpriteAsync(skill.getSpriteId(), 0, image -> SwingUtilities.invokeLater(() -> use.accept(image)));
-				return;
-			}
+			spriteManager.getSpriteAsync(row.getSpriteId(), 0, image -> SwingUtilities.invokeLater(() -> use.accept(image)));
 		}
 	}
 
