@@ -48,6 +48,25 @@ final class LootSimApi
 		int maxKills;
 	}
 
+	// One setting of a boss's options row: a switch ("toggle", on or off) or a number with its range
+	static final class Option
+	{
+		String id;
+		String kind;
+		String label;
+		String tip;
+		boolean on;
+		int min;
+		int max;
+		int step;
+		int value;
+	}
+
+	static final class OptionList
+	{
+		List<Option> options;
+	}
+
 	static final class Item
 	{
 		String name;
@@ -107,7 +126,24 @@ final class LootSimApi
 			&& list.bosses.stream().allMatch(b -> b != null && b.name != null && !b.name.isEmpty()), ok, fail);
 	}
 
-	void simulate(String boss, int kills, Consumer<Run> ok, Consumer<String> fail)
+	/**
+	 * The settings a boss can be simulated with. A site that does not know the question yet answers with an error.
+	 */
+	void options(String boss, Consumer<OptionList> ok, Consumer<String> fail)
+	{
+		HttpUrl url = url("api/sim/options");
+		if (url == null)
+		{
+			fail.accept(UNREACHABLE);
+			return;
+		}
+		get(url.newBuilder().addQueryParameter("boss", boss).build(), OptionList.class, list -> list.options != null, ok, fail);
+	}
+
+	/**
+	 * settings: the options row's choices as OptionsBar writes them, or nothing.
+	 */
+	void simulate(String boss, int kills, String settings, Consumer<Run> ok, Consumer<String> fail)
 	{
 		HttpUrl url = url("api/sim");
 		if (url == null)
@@ -115,7 +151,12 @@ final class LootSimApi
 			fail.accept(UNREACHABLE);
 			return;
 		}
-		url = url.newBuilder().addQueryParameter("boss", boss).addQueryParameter("kills", String.valueOf(kills)).build();
+		HttpUrl.Builder asked = url.newBuilder().addQueryParameter("boss", boss).addQueryParameter("kills", String.valueOf(kills));
+		if (settings != null && !settings.isEmpty())
+		{
+			asked.addQueryParameter("set", settings);
+		}
+		url = asked.build();
 		get(url, Run.class, run -> run.name != null && run.items != null && run.dry != null && run.kills > 0
 			&& run.items.stream().allMatch(i -> i != null && i.name != null)
 			&& run.dry.stream().allMatch(d -> d != null && d.name != null), ok, fail);

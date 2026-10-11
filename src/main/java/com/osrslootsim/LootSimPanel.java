@@ -31,9 +31,6 @@ import javax.swing.JTextField;
 import javax.swing.SwingConstants;
 import javax.swing.Timer;
 import javax.swing.text.AbstractDocument;
-import javax.swing.text.AttributeSet;
-import javax.swing.text.BadLocationException;
-import javax.swing.text.DocumentFilter;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.PluginPanel;
@@ -73,6 +70,9 @@ final class LootSimPanel extends PluginPanel
 
 	private final BossPicker picker;
 	private final Map<String, JButton> quickButtons = new LinkedHashMap<>();
+	private final OptionsBar optionsBar = new OptionsBar();
+	// The options rows already fetched, by boss
+	private final Map<String, List<LootSimApi.Option>> optionLists = new HashMap<>();
 
 	private final JTextField killsField = new JTextField("100");
 	private final JButton kcButton = new JButton("My KC");
@@ -94,6 +94,8 @@ final class LootSimPanel extends PluginPanel
 	private int maxKills = DEFAULT_MAX_KILLS;
 	private boolean bossesLoaded;
 	private boolean bossesLoading;
+	// Nothing is asked of the site before the panel has been opened once
+	private boolean opened;
 	private boolean hasRun;
 	// Closed until the player opens it, then as they left it for the runs that follow
 	private boolean dryOpen;
@@ -142,6 +144,7 @@ final class LootSimPanel extends PluginPanel
 			quick.add(button);
 		}
 		addRow(quick);
+		addRow(optionsBar);
 
 		JLabel killsLabel = label("Kills", ColorScheme.LIGHT_GRAY_COLOR);
 		killsLabel.setLabelFor(killsField);
@@ -227,7 +230,9 @@ final class LootSimPanel extends PluginPanel
 	@Override
 	public void onActivate()
 	{
+		opened = true;
 		loadBosses();
+		loadOptions();
 		showLevel(0);
 		dressIcon();   // the date may have moved into or out of a holiday since the panel was last open
 		skillIcon.play(true);
@@ -294,6 +299,11 @@ final class LootSimPanel extends PluginPanel
 		return picker;
 	}
 
+	OptionsBar optionsBar()
+	{
+		return optionsBar;
+	}
+
 	void simulate()
 	{
 		String boss = picker.selected();
@@ -311,7 +321,7 @@ final class LootSimPanel extends PluginPanel
 		simulateButton.setEnabled(false);
 		simulateButton.setText("Simulating...");
 		long started = System.currentTimeMillis();
-		api.simulate(boss, kills, run ->
+		api.simulate(boss, kills, optionsBar.settings(), run ->
 		{
 			showRun(run);
 			rest(started);
@@ -524,6 +534,38 @@ final class LootSimPanel extends PluginPanel
 			boolean on = quick.getKey().equals(selected);
 			quick.getValue().setBorder(BorderFactory.createLineBorder(on ? ColorScheme.BRAND_ORANGE : ColorScheme.DARKER_GRAY_COLOR));
 		}
+		loadOptions();
+	}
+
+	/**
+	 * Shows the picked boss's options row, asking the site for it the first time the boss is picked.
+	 */
+	private void loadOptions()
+	{
+		String boss = picker.selected();
+		if (!opened || boss == null)
+		{
+			return;
+		}
+		List<LootSimApi.Option> known = optionLists.get(boss);
+		optionsBar.offer(boss, known);   // nothing yet hides the row until the answer is in
+		revalidate();
+		if (known != null)
+		{
+			return;
+		}
+		api.options(boss, list ->
+		{
+			optionLists.put(boss, list.options);
+			if (boss.equals(picker.selected()))
+			{
+				optionsBar.offer(boss, list.options);
+				revalidate();
+			}
+		}, error ->
+		{
+			// no row for this boss: it is simulated with the site's usual settings
+		});
 	}
 
 	/**
@@ -757,34 +799,4 @@ final class LootSimPanel extends PluginPanel
 		}
 	}
 
-	/**
-	 * Lets only digits into the kills box, up to a length.
-	 */
-	private static final class DigitsOnly extends DocumentFilter
-	{
-		private final int max;
-
-		DigitsOnly(int max)
-		{
-			this.max = max;
-		}
-
-		@Override
-		public void insertString(FilterBypass fb, int offset, String text, AttributeSet attr) throws BadLocationException
-		{
-			replace(fb, offset, 0, text, attr);
-		}
-
-		@Override
-		public void replace(FilterBypass fb, int offset, int length, String text, AttributeSet attr) throws BadLocationException
-		{
-			String digits = text == null ? "" : text.replaceAll("[^0-9]", "");
-			int room = max - (fb.getDocument().getLength() - length);
-			if (room <= 0 && !digits.isEmpty())
-			{
-				return;
-			}
-			super.replace(fb, offset, length, digits.length() > room ? digits.substring(0, Math.max(0, room)) : digits, attr);
-		}
-	}
 }

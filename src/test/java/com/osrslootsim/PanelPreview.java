@@ -86,6 +86,20 @@ public final class PanelPreview
 			picker.choose(0);
 			System.out.println("picked: " + picker.selected());
 		});
+		Thread.sleep(1500);   // the boss's options row
+		String wantedSettings = args.length > 4 ? args[4] : "";
+		SwingUtilities.invokeAndWait(() ->
+		{
+			for (String one : wantedSettings.split(","))
+			{
+				String[] parts = one.split(":");
+				if (parts.length == 2)
+				{
+					panel.optionsBar().choose(parts[0], Integer.parseInt(parts[1]));
+				}
+			}
+			System.out.println("settings sent: \"" + panel.optionsBar().settings() + "\"");
+		});
 
 		SwingUtilities.invokeAndWait(panel::simulate);
 		long deadline = System.currentTimeMillis() + 30_000;

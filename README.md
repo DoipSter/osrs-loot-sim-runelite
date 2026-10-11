@@ -3,6 +3,8 @@
 A RuneLite side panel for [osrslootsim.com](https://osrslootsim.com): pick a boss, raid, chest or clue, type a number of
 kills and press Simulate.
 
+- A row of settings for the boss you picked, where it has any: Challenge Mode and team size at a raid, skulled at
+  revenants, on a slayer task.
 - The loot of the run as item pictures with their stack counts, and its total value at Grand Exchange prices.
 - Your chance of having seen each rare drop by that many kills, in a list you open when you want it.
 - **My KC** fills in your own kill count for the boss, from the official hiscores or the count RuneLite last saw in
@@ -14,8 +16,8 @@ kills and press Simulate.
 ## What it sends
 
 The drop tables and loot rules live on osrslootsim.com, so they follow game updates without a new version of this
-plugin. Opening the panel asks the site for its list of bosses. Each press of Simulate sends the boss's name and the
-number of kills. Like any request to a website, that shows the site your IP address, which it uses only to limit how
+plugin. Opening the panel asks the site for its list of bosses, and picking a boss asks for that boss's settings. Each
+press of Simulate sends the boss's name, the number of kills and the settings you chose. Like any request to a website, that shows the site your IP address, which it uses only to limit how
 often one visitor can ask.
 
 Nothing about you or your account is sent to osrslootsim.com: not your name, your kill counts, your level or anything
