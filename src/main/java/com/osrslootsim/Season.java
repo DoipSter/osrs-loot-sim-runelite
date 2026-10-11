@@ -37,6 +37,14 @@ enum Season
 		return "looting-anim" + suffix + ".png";
 	}
 
+	/**
+	 * The site's pet fanfare for this season, as a sound file next to the plugin's classes.
+	 */
+	String fanfare()
+	{
+		return "pet" + suffix + ".wav";
+	}
+
 	static Season on(LocalDate day)
 	{
 		int date = day.getMonthValue() * 100 + day.getDayOfMonth();

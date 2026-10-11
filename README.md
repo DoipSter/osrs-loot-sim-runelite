@@ -8,8 +8,9 @@ kills and press Simulate.
 - The loot of the run as item pictures with their stack counts, and its total value at Grand Exchange prices.
 - Your chance of having seen each rare drop by that many kills, in a list you open when you want it.
 - When a run has an insane drop (a collection log item rarer than 1/2,000, or anything worth 10m or more): a card
-  with the item in the chatbox, and a burst of light with a golden loot beam on your character. Both go after a few
-  seconds, and each has its own switch in the plugin's settings.
+  with the item in the chatbox, a burst of light with a golden loot beam under your character, and the site's pet
+  fanfare. They go after a few seconds. Each has its own switch in the plugin's settings, and the sound has a volume.
+- If you switch it on, the same loot beam when you gain a level or add an item to your collection log in the game.
 - **My KC** fills in your own kill count for the boss, from the official hiscores or the count RuneLite last saw in
   chat, whichever is higher. **Clear** takes the last run off the panel.
 - A **Looting level** from 1 to 99, earned by simulating. It is saved per RuneScape account in RuneLite's own settings

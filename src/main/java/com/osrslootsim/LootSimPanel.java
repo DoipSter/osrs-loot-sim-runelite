@@ -102,6 +102,10 @@ final class LootSimPanel extends PluginPanel
 	private Consumer<LootSimApi.Run> onRun = run ->
 	{
 	};
+	// Told when a run takes the account up a Looting level
+	private Runnable onLevelUp = () ->
+	{
+	};
 	// Closed until the player opens it, then as they left it for the runs that follow
 	private boolean dryOpen;
 	private String statusText = "";
@@ -314,6 +318,11 @@ final class LootSimPanel extends PluginPanel
 		this.onRun = onRun;
 	}
 
+	void onLevelUp(Runnable onLevelUp)
+	{
+		this.onLevelUp = onLevelUp;
+	}
+
 	void simulate()
 	{
 		String boss = picker.selected();
@@ -400,6 +409,7 @@ final class LootSimPanel extends PluginPanel
 			if (after > before)
 			{
 				say("Looting level " + after + "!");
+				onLevelUp.run();
 			}
 		}
 		else

@@ -3,14 +3,25 @@ package com.osrslootsim;
 import com.google.gson.Gson;
 import com.google.inject.Provides;
 import java.awt.image.BufferedImage;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
 import javax.inject.Inject;
 import javax.swing.SwingUtilities;
+import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
+import net.runelite.api.GameState;
 import net.runelite.api.Player;
+import net.runelite.api.ScriptID;
+import net.runelite.api.Skill;
+import net.runelite.api.events.ChatMessage;
+import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.ScriptPreFired;
+import net.runelite.api.events.StatChanged;
+import net.runelite.api.gameval.VarClientID;
+import net.runelite.client.audio.AudioPlayer;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -21,7 +32,6 @@ import net.runelite.client.game.SpriteManager;
 import net.runelite.client.hiscore.HiscoreClient;
 import net.runelite.client.hiscore.HiscoreEndpoint;
 import net.runelite.client.hiscore.HiscoreSkill;
-import net.runelite.client.hiscore.Skill;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
@@ -43,6 +53,9 @@ public class LootSimPlugin extends Plugin implements Account
 	// Where RuneLite's own Chat Commands plugin keeps the kill counts it reads from chat, under the boss's name in
 	// lower case. A few sources go by another name there than in the simulator.
 	private static final String KILLCOUNT_GROUP = "killcount";
+	// How the game announces a new collection log item: a line in chat, a pop-up at the top of the screen, or both
+	private static final String COLLECTION_LOG_CHAT = "New item added to your collection log:";
+	private static final String COLLECTION_LOG_POPUP = "Collection log";
 	private static final Map<String, String> KILLCOUNT_NAMES = new HashMap<>();
 
 	static
@@ -85,9 +98,18 @@ public class LootSimPlugin extends Plugin implements Account
 	@Inject
 	private OverlayManager overlayManager;
 
+	@Inject
+	private AudioPlayer audioPlayer;
+
 	private LootSimPanel panel;
 	private NavigationButton navButton;
 	private DropPopups popups;
+
+	// The account's levels as last seen, to tell a level gained from the game simply reporting its stats (as it
+	// does for every skill at login)
+	private final Map<Skill, Integer> levels = new EnumMap<>(Skill.class);
+	// The game's pop-up at the top of the screen is announced in two steps: the second reads what the first set up
+	private boolean notificationStarted;
 
 	@Provides
 	LootSimConfig provideConfig(ConfigManager configManager)
@@ -99,10 +121,17 @@ public class LootSimPlugin extends Plugin implements Account
 	protected void startUp()
 	{
 		GameIcons icons = new GameIcons(client, clientThread, itemManager, spriteManager);
-		popups = new DropPopups(client, config, icons, overlayManager);
+		popups = new DropPopups(client, config, icons, overlayManager, audioPlayer);
 		popups.start();
 		panel = new LootSimPanel(new LootSimApi(okHttpClient, gson), icons, this, config);
 		panel.onRun(popups::ran);
+		panel.onLevelUp(() ->
+		{
+			if (config.levelUpBeam())
+			{
+				popups.burst();
+			}
+		});
 		BufferedImage icon = ImageUtil.loadImageResource(LootSimPlugin.class, "icon.png");
 		navButton = NavigationButton.builder()
 			.tooltip("OSRS Loot Sim")
@@ -119,6 +148,7 @@ public class LootSimPlugin extends Plugin implements Account
 		clientToolbar.removeNavigation(navButton);
 		popups.stop();
 		popups = null;
+		levels.clear();
 		navButton = null;
 		panel = null;
 	}
@@ -137,6 +167,56 @@ public class LootSimPlugin extends Plugin implements Account
 				panel.settingsChanged();
 			}
 		});
+	}
+
+	@Subscribe
+	public void onStatChanged(StatChanged event)
+	{
+		Integer before = levels.put(event.getSkill(), event.getLevel());
+		if (before != null && event.getLevel() > before && config.levelUpBeam() && popups != null)
+		{
+			popups.burst();
+		}
+	}
+
+	@Subscribe
+	public void onGameStateChanged(GameStateChanged event)
+	{
+		// Another login may be another account: its levels are not gains over the last one's
+		if (event.getGameState() == GameState.LOGIN_SCREEN || event.getGameState() == GameState.HOPPING)
+		{
+			levels.clear();
+		}
+	}
+
+	@Subscribe
+	public void onChatMessage(ChatMessage event)
+	{
+		if (event.getType() == ChatMessageType.GAMEMESSAGE && config.collectionLogBeam() && popups != null
+			&& net.runelite.client.util.Text.removeTags(event.getMessage()).startsWith(COLLECTION_LOG_CHAT))
+		{
+			popups.burst();
+		}
+	}
+
+	@Subscribe
+	public void onScriptPreFired(ScriptPreFired event)
+	{
+		// The collection log's pop-up, for players who have its chat line switched off. Read the way RuneLite's own
+		// Screenshot plugin reads it.
+		if (event.getScriptId() == ScriptID.NOTIFICATION_START)
+		{
+			notificationStarted = true;
+		}
+		else if (event.getScriptId() == ScriptID.NOTIFICATION_DELAY && notificationStarted)
+		{
+			notificationStarted = false;
+			String title = client.getVarcStrValue(VarClientID.NOTIFICATION_TITLE);
+			if (COLLECTION_LOG_POPUP.equalsIgnoreCase(title) && config.collectionLogBeam() && popups != null)
+			{
+				popups.burst();
+			}
+		}
 	}
 
 	@Subscribe
@@ -200,7 +280,7 @@ public class LootSimPlugin extends Plugin implements Account
 			}
 			hiscoreClient.lookupAsync(name, HiscoreEndpoint.fromWorldTypes(client.getWorldType())).whenComplete((result, error) ->
 			{
-				Skill listed = result == null ? null : result.getSkill(row);
+				net.runelite.client.hiscore.Skill listed = result == null ? null : result.getSkill(row);
 				int count = Math.max(saved == null ? 0 : saved, listed == null ? 0 : listed.getLevel());
 				SwingUtilities.invokeLater(() -> answer.accept(count > 0 ? count : null));
 			});

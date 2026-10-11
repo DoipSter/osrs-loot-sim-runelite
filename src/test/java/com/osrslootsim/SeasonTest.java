@@ -54,6 +54,7 @@ public class SeasonTest
 		{
 			assertNotNull(season.still(), Season.class.getResource(season.still()));
 			assertNotNull(season.strip(), Season.class.getResource(season.strip()));
+			assertNotNull(season.fanfare(), Season.class.getResource(season.fanfare()));
 		}
 	}
 }

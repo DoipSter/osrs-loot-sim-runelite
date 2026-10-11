@@ -4,6 +4,10 @@ import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.geom.AffineTransform;
+import java.io.IOException;
+import java.time.LocalDate;
+import javax.sound.sampled.LineUnavailableException;
+import javax.sound.sampled.UnsupportedAudioFileException;
 import net.runelite.api.Client;
 import net.runelite.api.Model;
 import net.runelite.api.Perspective;
@@ -12,15 +16,17 @@ import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
+import net.runelite.client.audio.AudioPlayer;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.ui.overlay.OverlayPosition;
 
 /**
- * What an insane drop in a simulated run gets: a card in the chatbox with the item, and a burst of light with a loot
- * beam on the floor under the player's character, drawn behind the character. Each has its own switch in the plugin's settings. Both last a few seconds and go by
- * themselves.
+ * The plugin's celebrations. An insane drop in a simulated run gets a card in the chatbox with the item, a burst of
+ * light with a loot beam on the floor under the player's character (drawn behind the character), and the site's pet
+ * fanfare. The burst can also mark a level gained or a new collection log item in the game itself. Each part has its
+ * own switch in the plugin's settings, and everything goes by itself after a few seconds.
  */
 final class DropPopups
 {
@@ -28,25 +34,31 @@ final class DropPopups
 	private static final int SHOWN_MS = 4800;
 	private static final int FADE_IN_MS = 150;
 	private static final int FADE_OUT_MS = 400;
+	// Two reports of one event (a chat line and a pop-up for the same collection log item) are one burst
+	private static final int SAME_EVENT_MS = 1500;
 	private static final String INSANE = "insane";
 
 	private final Client client;
 	private final LootSimConfig config;
 	private final Icons icons;
 	private final OverlayManager overlayManager;
+	private final AudioPlayer audioPlayer;
 	private final Overlay card = new ChatCard();
 	private final Overlay burst = new CharacterBurst();
 
-	// Set on the Swing thread when a run arrives, read on the game's thread every frame
+	// Set when something happens (a run arriving on the Swing thread, a game event on the game's thread), read on the
+	// game's thread every frame
 	private volatile DropCard.Drop drop;
-	private volatile long shownAt;
+	private volatile long cardAt;
+	private volatile long burstAt;
 
-	DropPopups(Client client, LootSimConfig config, Icons icons, OverlayManager overlayManager)
+	DropPopups(Client client, LootSimConfig config, Icons icons, OverlayManager overlayManager, AudioPlayer audioPlayer)
 	{
 		this.client = client;
 		this.config = config;
 		this.icons = icons;
 		this.overlayManager = overlayManager;
+		this.audioPlayer = audioPlayer;
 	}
 
 	void start()
@@ -60,19 +72,16 @@ final class DropPopups
 		overlayManager.remove(card);
 		overlayManager.remove(burst);
 		drop = null;
+		burstAt = 0;
 	}
 
 	/**
-	 * A run arrived: celebrates its best insane drop, if it has one and either switch is on. The site marks which
-	 * drops are insane, by its own rule: a collection log item rarer than 1/2,000, or anything worth 10m or more
-	 * apiece.
+	 * A run arrived: celebrates its best insane drop, if it has one, with whichever of the card, the burst and the
+	 * sound are switched on. The site marks which drops are insane, by its own rule: a collection log item rarer
+	 * than 1/2,000, or anything worth 10m or more apiece.
 	 */
 	void ran(LootSimApi.Run run)
 	{
-		if (!config.insaneDropCard() && !config.insaneDropBurst())
-		{
-			return;
-		}
 		LootSimApi.Item best = null;
 		for (LootSimApi.Item item : run.items)
 		{
@@ -85,11 +94,58 @@ final class DropPopups
 		{
 			return;
 		}
-		String name = Text.plain(best.name, 40);
-		DropCard.Drop shown = new DropCard.Drop(name);
-		icons.picture(best.id, name, picture -> shown.picture = picture);
-		shownAt = System.currentTimeMillis();
-		drop = shown;
+		if (config.insaneDropCard())
+		{
+			String name = Text.plain(best.name, 40);
+			DropCard.Drop shown = new DropCard.Drop(name);
+			icons.picture(best.id, name, picture -> shown.picture = picture);
+			cardAt = System.currentTimeMillis();
+			drop = shown;
+		}
+		if (config.insaneDropBurst())
+		{
+			burst();
+		}
+		if (config.insaneDropSound())
+		{
+			fanfare();
+		}
+	}
+
+	/**
+	 * Starts the burst on the character. Called for an insane drop, and for a level or a collection log item gained
+	 * in the game when those switches are on.
+	 */
+	void burst()
+	{
+		long now = System.currentTimeMillis();
+		if (now - burstAt > SAME_EVENT_MS)
+		{
+			burstAt = now;
+		}
+	}
+
+	/**
+	 * Plays the site's pet fanfare, the holiday's own in season, at the volume the settings give.
+	 */
+	private void fanfare()
+	{
+		int volume = Math.max(0, Math.min(100, config.soundVolume()));
+		if (volume == 0)
+		{
+			return;
+		}
+		Season season = config.holidayIcon() ? Season.on(LocalDate.now()) : Season.NONE;
+		// The player takes a gain in decibels: every halving of the volume is 6 less
+		float gain = (float) (20 * Math.log10(volume / 100.0));
+		try
+		{
+			audioPlayer.play(DropPopups.class, season.fanfare(), gain);
+		}
+		catch (IOException | UnsupportedAudioFileException | LineUnavailableException | IllegalArgumentException e)
+		{
+			// no sound device, or one that will not take the format: the card and the burst still show
+		}
 	}
 
 	private static long each(LootSimApi.Item item)
@@ -98,14 +154,13 @@ final class DropPopups
 	}
 
 	/**
-	 * How solid the celebration is right now, from 0 to 1; 0 once its time is up.
+	 * How solid something that began at the given time is right now, from 0 to 1; 0 once its time is up.
 	 */
-	private float opacity()
+	private static float opacity(long began)
 	{
-		long age = System.currentTimeMillis() - shownAt;
-		if (drop == null || age < 0 || age >= SHOWN_MS)
+		long age = System.currentTimeMillis() - began;
+		if (age < 0 || age >= SHOWN_MS)
 		{
-			drop = null;
 			return 0;
 		}
 		if (age < FADE_IN_MS)
@@ -131,9 +186,10 @@ final class DropPopups
 		public Dimension render(Graphics2D graphics)
 		{
 			DropCard.Drop shown = drop;
-			float opacity = opacity();
-			if (shown == null || opacity <= 0 || !config.insaneDropCard())
+			float opacity = opacity(cardAt);
+			if (shown == null || opacity <= 0)
 			{
+				drop = null;
 				return null;
 			}
 			Widget chat = client.getWidget(InterfaceID.Chatbox.CHATAREA);
@@ -166,8 +222,9 @@ final class DropPopups
 		@Override
 		public Dimension render(Graphics2D graphics)
 		{
-			float opacity = opacity();
-			if (drop == null || opacity <= 0 || !config.insaneDropBurst())
+			long began = burstAt;
+			float opacity = opacity(began);
+			if (opacity <= 0)
 			{
 				return null;
 			}
@@ -190,7 +247,7 @@ final class DropPopups
 			}
 			AffineTransform ground = new AffineTransform(east[0] - feet[0], east[1] - feet[1], north[0] - feet[0], north[1] - feet[1], feet[0], feet[1]);
 			Rectangle view = new Rectangle(client.getViewportXOffset(), client.getViewportYOffset(), client.getViewportWidth(), client.getViewportHeight());
-			DropCard.paintBurstBehind(graphics, view, ground, (int) Math.round(feet[0]), (int) Math.round(feet[1]), System.currentTimeMillis() - shownAt, opacity,
+			DropCard.paintBurstBehind(graphics, view, ground, (int) Math.round(feet[0]), (int) Math.round(feet[1]), System.currentTimeMillis() - began, opacity,
 				sheet -> outline(sheet, me, at, world));
 			return null;
 		}
