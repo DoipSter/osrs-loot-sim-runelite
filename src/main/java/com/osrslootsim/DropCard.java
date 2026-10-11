@@ -292,14 +292,7 @@ final class DropCard
 				runeDisc(g, ground, age, swell, glow);
 		}
 
-		// One ring racing outward along the floor as the beam lands
-		float raced = (age - 120) / 900f;
-		if (raced > 0 && raced < 1)
-		{
-			g.setStroke(new BasicStroke(3f));
-			g.setColor(tint(glow.core, 230 * (1 - raced)));
-			g.draw(circle(ground, DISC * (0.75 + 2.2 * ease(raced))));
-		}
+		shockRing(g, ground, age, season, glow);
 
 		beamAndLights(g, footX, footY, top, age, w, swell, season, glow);
 
@@ -314,6 +307,108 @@ final class DropCard
 				new Color[]{Color.WHITE, Color.WHITE, tint(glow.pale, 235), tint(glow.body, 0)}));
 			lying.fill(new Ellipse2D.Float(-foot, -foot, 2 * foot, 2 * foot));
 			lying.dispose();
+		}
+	}
+
+	/**
+	 * One ring racing outward along the floor as the beam lands, fading as it goes. A plain ring of light, or the
+	 * holiday's own: a jagged pumpkin grin at Halloween, a gust of leaves at Thanksgiving, a ring of ice spikes at
+	 * Christmas.
+	 */
+	private static void shockRing(Graphics2D g, AffineTransform ground, long age, Season season, Glow glow)
+	{
+		float raced = (age - 120) / 900f;
+		if (raced <= 0 || raced >= 1)
+		{
+			return;
+		}
+		double radius = DISC * (0.75 + 2.2 * ease(raced));
+		float fade = 1 - raced;
+		switch (season)
+		{
+			case HALLOWEEN:
+			{
+				// teeth all the way round, like the lantern's grin
+				int teeth = 30;
+				Path2D grin = new Path2D.Double();
+				for (int k = 0; k < 2 * teeth; k++)
+				{
+					double a = k * Math.PI / teeth;
+					double out = radius * (k % 2 == 0 ? 1.0 : 1.1);
+					if (k == 0)
+					{
+						grin.moveTo(Math.cos(a) * out, Math.sin(a) * out);
+					}
+					else
+					{
+						grin.lineTo(Math.cos(a) * out, Math.sin(a) * out);
+					}
+				}
+				grin.closePath();
+				Shape ring = ground.createTransformedShape(grin);
+				g.setStroke(new BasicStroke(6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+				g.setColor(new Color(155, 61, 255, Math.round(95 * fade)));
+				g.draw(ring);
+				g.setStroke(new BasicStroke(2.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+				g.setColor(new Color(255, 156, 46, Math.round(240 * fade)));
+				g.draw(ring);
+				break;
+			}
+			case THANKSGIVING:
+			{
+				// a gust: leaves swept round and outward, tumbling
+				g.setStroke(new BasicStroke(1.5f));
+				g.setColor(tint(glow.pale, 110 * fade));
+				g.draw(circle(ground, radius));
+				int[][] autumn = {{245, 165, 58}, {232, 85, 63}, {240, 200, 70}, {166, 98, 40}};
+				Graphics2D floor = (Graphics2D) g.create();
+				floor.transform(ground);
+				int count = 16;
+				for (int k = 0; k < count; k++)
+				{
+					double a = k * 2 * Math.PI / count + raced * 1.1;
+					int[] rgb = autumn[k % autumn.length];
+					Graphics2D leaf = (Graphics2D) floor.create();
+					leaf.translate(Math.cos(a) * radius, Math.sin(a) * radius);
+					leaf.rotate(a + raced * 7 + k);
+					leaf.scale(0.3 / 64.0, 0.3 / 64.0);
+					leaf.setColor(new Color(rgb[0], rgb[1], rgb[2], Math.round(245 * fade)));
+					leaf.fill(LEAF);
+					leaf.dispose();
+				}
+				floor.dispose();
+				break;
+			}
+			case CHRISTMAS:
+			{
+				// a ring of ice with spikes thrown outward, long and short by turns
+				int spikes = 28;
+				Path2D ice = new Path2D.Double();
+				for (int k = 0; k < spikes; k++)
+				{
+					double a = k * 2 * Math.PI / spikes;
+					double tip = radius * (k % 2 == 0 ? 1.14 : 1.07);
+					double half = 0.045;
+					ice.moveTo(Math.cos(a - half) * radius, Math.sin(a - half) * radius);
+					ice.lineTo(Math.cos(a) * tip, Math.sin(a) * tip);
+					ice.lineTo(Math.cos(a + half) * radius, Math.sin(a + half) * radius);
+					ice.closePath();
+				}
+				Shape round = circle(ground, radius);
+				g.setStroke(new BasicStroke(6f));
+				g.setColor(new Color(120, 176, 236, Math.round(90 * fade)));
+				g.draw(round);
+				g.setColor(new Color(232, 245, 255, Math.round(225 * fade)));
+				g.fill(ground.createTransformedShape(ice));
+				g.setStroke(new BasicStroke(2f));
+				g.setColor(new Color(255, 255, 255, Math.round(240 * fade)));
+				g.draw(round);
+				break;
+			}
+			default:
+				g.setStroke(new BasicStroke(3f));
+				g.setColor(tint(glow.core, 230 * fade));
+				g.draw(circle(ground, radius));
 		}
 	}
 
