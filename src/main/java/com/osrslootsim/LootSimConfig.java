@@ -18,8 +18,8 @@ public interface LootSimConfig extends Config
 	String INSANE_DROPS = "insaneDrops";
 
 	@ConfigSection(
-		name = "Loot beam in the game",
-		description = "Use the insane drop's loot beam for things that happen in the game itself",
+		name = "In the game",
+		description = "Use the insane drop's loot beam and pop-up for things that happen in the game itself",
 		position = 20
 	)
 	String IN_GAME = "inGame";
@@ -65,8 +65,8 @@ public interface LootSimConfig extends Config
 
 	@ConfigItem(
 		keyName = "insaneDropCard",
-		name = "Pop-up in chat",
-		description = "Show the item in the chatbox",
+		name = "Pop-up",
+		description = "Show the item on a card. The card starts in the chatbox; untick Lock pop-up to put it somewhere else",
 		position = 11,
 		section = INSANE_DROPS
 	)
@@ -76,10 +76,23 @@ public interface LootSimConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "lockCard",
+		name = "Lock pop-up",
+		description = "Untick to place the pop-up. It then stays on screen, outlined. Hold Alt (RuneLite's drag key), then drag it to move it, "
+			+ "drag one of its edges to resize it, or right-click it to put it back. Tick again when it is where you want it",
+		position = 12,
+		section = INSANE_DROPS
+	)
+	default boolean lockCard()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "insaneDropBurst",
 		name = "Loot beam",
 		description = "A burst of light and a golden loot beam under your character",
-		position = 12,
+		position = 13,
 		section = INSANE_DROPS
 	)
 	default boolean insaneDropBurst()
@@ -91,7 +104,7 @@ public interface LootSimConfig extends Config
 		keyName = "insaneDropSound",
 		name = "Sound",
 		description = "Play osrslootsim.com's pet fanfare",
-		position = 13,
+		position = 14,
 		section = INSANE_DROPS
 	)
 	default boolean insaneDropSound()
@@ -105,7 +118,7 @@ public interface LootSimConfig extends Config
 		keyName = "soundVolume",
 		name = "Sound volume",
 		description = "How loud the sound is. 0 is silent",
-		position = 14,
+		position = 15,
 		section = INSANE_DROPS
 	)
 	default int soundVolume()
@@ -115,7 +128,7 @@ public interface LootSimConfig extends Config
 
 	@ConfigItem(
 		keyName = "levelUpBeam",
-		name = "On level up",
+		name = "Beam on level up",
 		description = "Show the loot beam under your character when you gain a level, a Looting level included",
 		position = 21,
 		section = IN_GAME
@@ -127,7 +140,7 @@ public interface LootSimConfig extends Config
 
 	@ConfigItem(
 		keyName = "collectionLogBeam",
-		name = "On collection log",
+		name = "Beam on collection log",
 		description = "Show the loot beam under your character when a new item is added to your collection log",
 		position = 22,
 		section = IN_GAME
@@ -138,10 +151,22 @@ public interface LootSimConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "lootBeam",
-		name = "On valuable loot",
-		description = "Show the loot beam under your character when the loot of one kill or chest is worth the amount below or more",
+		keyName = "collectionLogCard",
+		name = "Pop-up on collection log",
+		description = "Show the pop-up when a new item is added to your collection log. It says Collection log, New item and the item's name",
 		position = 23,
+		section = IN_GAME
+	)
+	default boolean collectionLogCard()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "lootBeam",
+		name = "Beam on valuable loot",
+		description = "Show the loot beam under your character when the loot of one kill or chest is worth the amount below or more",
+		position = 24,
 		section = IN_GAME
 	)
 	default boolean lootBeam()
@@ -155,7 +180,7 @@ public interface LootSimConfig extends Config
 		keyName = "lootBeamValue",
 		name = "Loot worth at least",
 		description = "From 0 to 25,000,000 gp, at Grand Exchange prices, for all the loot of one kill or chest together. 0 is any loot",
-		position = 24,
+		position = 25,
 		section = IN_GAME
 	)
 	default int lootBeamValue()

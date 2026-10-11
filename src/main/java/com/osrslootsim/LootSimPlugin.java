@@ -28,6 +28,7 @@ import net.runelite.api.gameval.VarClientID;
 import net.runelite.client.audio.AudioPlayer;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.config.RuneLiteConfig;
 import net.runelite.client.eventbus.EventBus;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
@@ -72,6 +73,7 @@ public class LootSimPlugin extends Plugin implements Account
 	// How the game announces a new collection log item: a line in chat, a pop-up at the top of the screen, or both
 	private static final String COLLECTION_LOG_CHAT = "New item added to your collection log:";
 	private static final String COLLECTION_LOG_POPUP = "Collection log";
+	private static final String COLLECTION_LOG_POPUP_LEAD = "New item:";
 	private static final Map<String, String> KILLCOUNT_NAMES = new HashMap<>();
 
 	static
@@ -120,6 +122,9 @@ public class LootSimPlugin extends Plugin implements Account
 	@Inject
 	private EventBus eventBus;
 
+	@Inject
+	private RuneLiteConfig runeLiteConfig;
+
 	private LootSimPanel panel;
 	private NavigationButton navButton;
 	private DropPopups popups;
@@ -150,7 +155,7 @@ public class LootSimPlugin extends Plugin implements Account
 	protected void startUp()
 	{
 		GameIcons icons = new GameIcons(client, clientThread, itemManager, spriteManager);
-		popups = new DropPopups(client, clientThread, config, icons, overlayManager, audioPlayer);
+		popups = new DropPopups(client, clientThread, config, icons, overlayManager, audioPlayer, runeLiteConfig);
 		popups.start();
 		panel = new LootSimPanel(new LootSimApi(okHttpClient, gson), icons, this, config);
 		panel.onRun(popups::ran);
@@ -223,10 +228,14 @@ public class LootSimPlugin extends Plugin implements Account
 	@Subscribe
 	public void onChatMessage(ChatMessage event)
 	{
-		if (event.getType() == ChatMessageType.GAMEMESSAGE && config.collectionLogBeam() && popups != null
-			&& net.runelite.client.util.Text.removeTags(event.getMessage()).startsWith(COLLECTION_LOG_CHAT))
+		if (event.getType() != ChatMessageType.GAMEMESSAGE || popups == null)
 		{
-			popups.burst();
+			return;
+		}
+		String line = net.runelite.client.util.Text.removeTags(event.getMessage());
+		if (line.startsWith(COLLECTION_LOG_CHAT))
+		{
+			popups.collected(line.substring(COLLECTION_LOG_CHAT.length()).trim());
 		}
 	}
 
@@ -284,9 +293,11 @@ public class LootSimPlugin extends Plugin implements Account
 		{
 			notificationStarted = false;
 			String title = client.getVarcStrValue(VarClientID.NOTIFICATION_TITLE);
-			if (COLLECTION_LOG_POPUP.equalsIgnoreCase(title) && config.collectionLogBeam() && popups != null)
+			if (COLLECTION_LOG_POPUP.equalsIgnoreCase(title) && popups != null)
 			{
-				popups.burst();
+				// "New item:" and the item's name, on two lines
+				String text = net.runelite.client.util.Text.removeTags(String.valueOf(client.getVarcStrValue(VarClientID.NOTIFICATION_MAIN))).trim();
+				popups.collected(text.startsWith(COLLECTION_LOG_POPUP_LEAD) ? text.substring(COLLECTION_LOG_POPUP_LEAD.length()).trim() : text);
 			}
 		}
 	}

@@ -8,8 +8,9 @@ import java.io.File;
 import javax.imageio.ImageIO;
 
 /**
- * Draws the insane-drop card and burst to a PNG without starting the game: the card on the left, then the burst at
- * five moments of its life, on plain dark ground. The top row is seen from the game's usual camera angle, the bottom
+ * Draws the pop-up card and the burst to a PNG without starting the game. On the left the card four ways: for an
+ * insane drop, for a collection log item, unlocked at one and a half times its size, and at its smallest. Then the
+ * burst at five moments of its life, on plain dark ground. The top row is seen from the game's usual camera angle, the bottom
  * row from a low one turned a little, where the floor runs away from the eye. In each a grey figure stands in for the
  * character, a crate stands on the floor beside it (the burst must lie under it) and a post stands between the
  * character and the camera (it must hide the beam). Run it with "gradlew cardPreview" (see build.gradle). The real
@@ -30,7 +31,8 @@ public final class CardPreview
 		Season season = args.length > 2 && !args[2].isEmpty() ? Season.valueOf(args[2].toUpperCase()) : Season.NONE;
 		Burst.Glow glow = args.length > 3 && !args[3].isEmpty() ? Burst.Glow.valueOf(args[3].toUpperCase()) : BeamColour.BY_HOLIDAY.glow(season);
 
-		DropCard.Drop drop = new DropCard.Drop("Avernic defender hilt");
+		DropCard.Drop drop = new DropCard.Drop(DropCard.Kind.INSANE, "Avernic defender hilt");
+		DropCard.Drop logged = new DropCard.Drop(DropCard.Kind.COLLECTION_LOG, "Giant egg sac(full)");
 		File file = new File(sprite);
 		if (file.isFile())
 		{
@@ -41,14 +43,21 @@ public final class CardPreview
 			b.drawImage(item, (36 - item.getWidth()) / 2, (32 - item.getHeight()) / 2, null);
 			b.dispose();
 			drop.picture = box;
+			logged.picture = box;
 		}
 
-		int left = DropCard.WIDTH + 40;
+		int left = Math.round(DropCard.WIDTH * 1.5f) + 40;
 		BufferedImage image = new BufferedImage(left + COLUMN * MOMENTS.length, 2 * ROW, BufferedImage.TYPE_INT_RGB);
 		Graphics2D g = image.createGraphics();
 		g.setColor(new Color(34, 40, 30));
 		g.fillRect(0, 0, image.getWidth(), image.getHeight());
-		DropCard.paintCard(g, 20, 120, drop, 1f);
+		DropCard.paintCard(g, 20, 24, 1f, drop, 1f);
+		DropCard.paintCard(g, 20, 180, 1f, logged, 1f);
+		String[] how = {"Hold Alt, then", "drag to move, drag an edge to resize,", "right-click to put it back"};
+		DropCard.paintCard(g, 20, 400, 1.5f, drop, 1f);
+		DropCard.paintUnlocked(g, 20, 400, DropCard.size(drop.kind, 1.5f), how, 20, 400);
+		DropCard.paintCard(g, 20, 630, DropCard.SMALLEST, logged, 1f);
+		DropCard.paintUnlocked(g, 20, 630, DropCard.size(logged.kind, DropCard.SMALLEST), how, 20, 0);
 		for (int row = 0; row < 2; row++)
 		{
 			for (int i = 0; i < MOMENTS.length; i++)

@@ -31,13 +31,13 @@ public final class Bench
 
 		BufferedImage canvas = new BufferedImage(600, 300, BufferedImage.TYPE_INT_ARGB_PRE);
 		Graphics2D g = canvas.createGraphics();
-		DropCard.Drop drop = new DropCard.Drop("Tumeken's shadow (uncharged)");
+		DropCard.Drop drop = new DropCard.Drop(DropCard.Kind.INSANE, "Tumeken's shadow (uncharged)");
 		drop.picture = new BufferedImage(36, 32, BufferedImage.TYPE_INT_ARGB);
 		long[] card = new long[FRAMES];
 		for (int i = -WARM_UP; i < FRAMES; i++)
 		{
 			long began = System.nanoTime();
-			DropCard.paintCard(g, 20, 20, drop, 0.9f);
+			DropCard.paintCard(g, 20, 20, 1f, drop, 0.9f);
 			if (i >= 0)
 			{
 				card[i] = System.nanoTime() - began;

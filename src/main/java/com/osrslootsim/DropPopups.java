@@ -25,19 +25,22 @@ import net.runelite.api.WallObject;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.ItemID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.audio.AudioPlayer;
 import net.runelite.client.callback.ClientThread;
+import net.runelite.client.config.RuneLiteConfig;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.ui.overlay.OverlayPosition;
 
 /**
- * The plugin's celebrations. An insane drop in a simulated run gets a card in the chatbox with the item, a burst of
- * light with a loot beam on the floor under the player's character, and the site's pet fanfare. The burst can also
- * mark a level gained, a new collection log item or valuable loot in the game itself. Each part has its own switch in
- * the plugin's settings, and everything goes by itself after a few seconds.
+ * The plugin's celebrations. An insane drop in a simulated run gets a pop-up card with the item, a burst of light
+ * with a loot beam on the floor under the player's character, and the site's pet fanfare. The burst can also mark a
+ * level gained, a new collection log item or valuable loot in the game itself, and a new collection log item can
+ * have the card too. Each part has its own switch in the plugin's settings, and everything goes by itself after a
+ * few seconds. The card starts in the chatbox and can be moved and resized like RuneLite's own overlays.
  */
 final class DropPopups
 {
@@ -48,6 +51,8 @@ final class DropPopups
 	// Two reports of one event (a chat line and a pop-up for the same collection log item) are one burst
 	private static final int SAME_EVENT_MS = 1500;
 	private static final String INSANE = "insane";
+	// The item on the card that is shown while the card is unlocked
+	private static final String SAMPLE_NAME = "Twisted bow";
 	// How far around the character to look for things standing in front of the burst, in tiles
 	private static final int AROUND = 6;
 	// How far from where it stands a thing is taken to reach at most, in the game's units (128 to a tile)
@@ -63,20 +68,25 @@ final class DropPopups
 	private final Icons icons;
 	private final OverlayManager overlayManager;
 	private final AudioPlayer audioPlayer;
-	private final Overlay card = new ChatCard();
+	private final RuneLiteConfig runeLiteConfig;
+	private final Overlay card = new Card();
 	private final Overlay burst = new CharacterBurst();
 
 	// Set when something happens (a run arriving on the Swing thread, a game event on the game's thread), read on the
 	// game's thread every frame
 	private volatile DropCard.Drop drop;
 	private volatile long cardAt;
+	// What an unlocked card shows; made the first time it is needed, on the game's thread
+	private DropCard.Drop sample;
 	private volatile long burstAt;
 	// The holiday the burst is dressed for, settled when it starts
 	private volatile Season burstSeason = Season.NONE;
 	private volatile Burst.Glow burstGlow = Burst.Glow.GOLD;
 
-	DropPopups(Client client, ClientThread clientThread, LootSimConfig config, Icons icons, OverlayManager overlayManager, AudioPlayer audioPlayer)
+	DropPopups(Client client, ClientThread clientThread, LootSimConfig config, Icons icons, OverlayManager overlayManager, AudioPlayer audioPlayer,
+		RuneLiteConfig runeLiteConfig)
 	{
+		this.runeLiteConfig = runeLiteConfig;
 		this.client = client;
 		this.clientThread = clientThread;
 		this.config = config;
@@ -122,11 +132,7 @@ final class DropPopups
 		}
 		if (config.insaneDropCard())
 		{
-			String name = Text.plain(best.name, 40);
-			DropCard.Drop shown = new DropCard.Drop(name);
-			icons.picture(best.id, name, picture -> shown.picture = picture);
-			cardAt = System.currentTimeMillis();
-			drop = shown;
+			show(DropCard.Kind.INSANE, best.id, Text.plain(best.name, 40));
 		}
 		if (config.insaneDropBurst())
 		{
@@ -136,6 +142,40 @@ final class DropPopups
 		{
 			fanfare();
 		}
+	}
+
+	/**
+	 * The game added an item to the collection log: shows the card and the burst, whichever are switched on for that.
+	 */
+	void collected(String item)
+	{
+		String name = Text.plain(item, 40);
+		if (config.collectionLogCard() && !name.isEmpty())
+		{
+			show(DropCard.Kind.COLLECTION_LOG, 0, name);
+		}
+		if (config.collectionLogBeam())
+		{
+			burst();
+		}
+	}
+
+	/**
+	 * Puts a card up. The same card again while it is up (the game's chat line and, some time later, its pop-up for
+	 * one item) is the card that is already there.
+	 */
+	private void show(DropCard.Kind kind, int id, String name)
+	{
+		long now = System.currentTimeMillis();
+		DropCard.Drop up = drop;
+		if (up != null && up.kind == kind && up.name.equals(name) && now - cardAt < SHOWN_MS)
+		{
+			return;
+		}
+		DropCard.Drop shown = new DropCard.Drop(kind, name);
+		icons.picture(id, name, picture -> shown.picture = picture);
+		cardAt = now;
+		drop = shown;
 	}
 
 	/**
@@ -199,35 +239,102 @@ final class DropPopups
 	}
 
 	/**
-	 * The card, in the chatbox.
+	 * The card. It is one of RuneLite's movable overlays: with the drag key held (Alt, unless the player changed it)
+	 * it is dragged, resized by its edges and put back with a right-click, and RuneLite keeps where it was put. Until
+	 * the player moves it, it stands in the chatbox. With "Lock pop-up" unticked it stays on screen, marked, with a
+	 * sample item, so there is something to drag.
 	 */
-	private final class ChatCard extends Overlay
+	private final class Card extends Overlay
 	{
-		ChatCard()
+		// For a card the player has not placed: where it was last told to stand, and where RuneLite then stood it
+		// (the same place, unless that was partly off the screen)
+		private java.awt.Point told;
+		private java.awt.Point stood;
+
+		Card()
 		{
-			setPosition(OverlayPosition.DYNAMIC);
+			setPosition(OverlayPosition.DYNAMIC);   // which also says it stays put: movable is switched on after it
 			setLayer(OverlayLayer.ABOVE_WIDGETS);
 			setPriority(PRIORITY_HIGH);
+			setMovable(true);
+			setResizable(true);
+			setMinimumSize(Math.round(DropCard.HEIGHT * DropCard.SMALLEST));
+		}
+
+		// RuneLite keeps an overlay's place under this name, which is the class's own unless told otherwise
+		@Override
+		public String getName()
+		{
+			return "OsrsLootSimCard";
 		}
 
 		@Override
 		public Dimension render(Graphics2D graphics)
 		{
-			DropCard.Drop shown = drop;
-			float opacity = opacity(cardAt);
+			boolean unlocked = !config.lockCard();
+			DropCard.Drop shown = unlocked ? sample() : drop;
+			float opacity = unlocked ? 1f : opacity(cardAt);
 			if (shown == null || opacity <= 0)
 			{
 				drop = null;
 				return null;
 			}
+			Dimension room = getPreferredSize();
+			float scale = room == null ? 1f : DropCard.scale(room.width, room.height);
+			Dimension size = DropCard.size(shown.kind, scale);
+			if (!inPlace(size))
+			{
+				return size;   // RuneLite drew this frame somewhere else: the card is there from the next one
+			}
+			DropCard.paintCard(graphics, 0, 0, scale, shown, opacity);
+			if (unlocked)
+			{
+				String key = String.valueOf(runeLiteConfig.dragHotkey());
+				String[] how = {"Hold " + key + ", then", "drag to move, drag an edge to resize,", "right-click to put it back"};
+				DropCard.paintUnlocked(graphics, 0, 0, size, how, getBounds().x, getBounds().y);
+			}
+			return size;
+		}
+
+		/**
+		 * Sees to it that a card the player has not placed stands in the chatbox: on the left, its bottom edge just
+		 * inside the chatbox's own, or in the bottom left corner of the game when there is no chatbox to sit in (the
+		 * login screen, a chatbox that is hidden). RuneLite draws an overlay like this one where it last was, so
+		 * the card is moved there for the next frame. False when this frame is not there yet.
+		 */
+		private boolean inPlace(Dimension size)
+		{
+			if (getPreferredLocation() != null)
+			{
+				told = null;
+				return true;   // the player placed it: RuneLite draws it there
+			}
 			Widget chat = client.getWidget(InterfaceID.Chatbox.CHATAREA);
 			Rectangle area = chat == null || chat.isHidden() ? null : chat.getBounds();
-			// Left side of the chatbox, its bottom edge just inside the chatbox's own. No chatbox to sit in (the login
-			// screen, a chatbox that is hidden): the bottom left corner of the game.
 			int x = area == null ? 8 : area.x + 6;
-			int y = (area == null ? client.getCanvasHeight() - 30 : area.y + area.height - 6) - DropCard.HEIGHT;
-			DropCard.paintCard(graphics, x, Math.max(2, y), shown, opacity);
-			return null;
+			int y = (area == null ? client.getCanvasHeight() - 30 : area.y + area.height - 6) - size.height;
+			java.awt.Point wanted = new java.awt.Point(x, Math.max(2, y));
+			java.awt.Point now = getBounds().getLocation();
+			if (wanted.equals(told) && (stood == null || stood.equals(now)))
+			{
+				stood = now;
+				return true;
+			}
+			told = wanted;
+			stood = null;
+			getBounds().setLocation(wanted);
+			return false;
+		}
+
+		private DropCard.Drop sample()
+		{
+			if (sample == null)
+			{
+				DropCard.Drop made = new DropCard.Drop(DropCard.Kind.INSANE, SAMPLE_NAME);
+				icons.picture(ItemID.TWISTED_BOW, SAMPLE_NAME, picture -> made.picture = picture);
+				sample = made;
+			}
+			return sample;
 		}
 	}
 
@@ -271,7 +378,9 @@ final class DropPopups
 		{
 			setPosition(OverlayPosition.DYNAMIC);
 			setLayer(OverlayLayer.ABOVE_SCENE);
-			setPriority(PRIORITY_HIGH);
+			// Drawn before every other plugin's marks on the scene, so the names of items on the floor, of players and
+			// of monsters, and tile markers, are all on top of the burst
+			setPriority(PRIORITY_LOW - 1);
 		}
 
 		@Override
