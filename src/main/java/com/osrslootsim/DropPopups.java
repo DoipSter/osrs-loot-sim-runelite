@@ -51,6 +51,8 @@ final class DropPopups
 	private volatile DropCard.Drop drop;
 	private volatile long cardAt;
 	private volatile long burstAt;
+	// The holiday the burst is dressed for, settled when it starts
+	private volatile Season burstSeason = Season.NONE;
 
 	DropPopups(Client client, LootSimConfig config, Icons icons, OverlayManager overlayManager, AudioPlayer audioPlayer)
 	{
@@ -121,6 +123,7 @@ final class DropPopups
 		long now = System.currentTimeMillis();
 		if (now - burstAt > SAME_EVENT_MS)
 		{
+			burstSeason = config.holidayIcon() ? Season.on(LocalDate.now()) : Season.NONE;
 			burstAt = now;
 		}
 	}
@@ -248,7 +251,7 @@ final class DropPopups
 			AffineTransform ground = new AffineTransform(east[0] - feet[0], east[1] - feet[1], north[0] - feet[0], north[1] - feet[1], feet[0], feet[1]);
 			Rectangle view = new Rectangle(client.getViewportXOffset(), client.getViewportYOffset(), client.getViewportWidth(), client.getViewportHeight());
 			DropCard.paintBurstBehind(graphics, view, ground, (int) Math.round(feet[0]), (int) Math.round(feet[1]), System.currentTimeMillis() - began, opacity,
-				sheet -> outline(sheet, me, at, world));
+				burstSeason, sheet -> outline(sheet, me, at, world));
 			return null;
 		}
 

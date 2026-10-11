@@ -17,6 +17,10 @@ import java.awt.font.TextAttribute;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
+import java.awt.geom.NoninvertibleTransformException;
+import java.awt.geom.Path2D;
+import java.awt.geom.Point2D;
+import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.util.Collections;
 import java.util.function.Consumer;
@@ -43,6 +47,7 @@ final class DropCard
 	// Sizes on the floor, in tiles from where the character stands: the rune disc, and how far the flash spreads
 	private static final double DISC = 0.95;
 	private static final float FLASH_REACH = 3.2f;
+	private static final Path2D BAT = bat();
 	// The sheet the burst is drawn on before it goes over the game. Only the game's own thread draws.
 	private static BufferedImage sheet;
 
@@ -141,7 +146,7 @@ final class DropCard
 	 * drawn in. ground: where one tile around the character lands on screen (see paintBurst).
 	 */
 	static void paintBurstBehind(Graphics2D target, Rectangle view, AffineTransform ground, int footX, int footY, long age, float opacity,
-		Consumer<Graphics2D> cut)
+		Season season, Consumer<Graphics2D> cut)
 	{
 		double tileWide = Math.hypot(ground.getScaleX(), ground.getShearX());
 		double tileTall = Math.hypot(ground.getShearY(), ground.getScaleY());
@@ -164,7 +169,7 @@ final class DropCard
 		s.setClip(0, 0, area.width, area.height);
 		s.translate(-area.x, -area.y);
 		s.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		paintBurst(s, ground, footX, footY, view.y, age);
+		paintBurst(s, ground, footX, footY, view.y, age, season);
 		s.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
 		s.setComposite(AlphaComposite.DstOut);
 		s.setColor(Color.BLACK);
@@ -181,9 +186,10 @@ final class DropCard
 	 * character stands, into its place on screen, so everything that lies on the floor (the flash, the pool of light,
 	 * the rune disc, the rings) lies as flat as the game's own floor does at this camera angle. footX, footY: where
 	 * the character stands on screen. top: the top edge of the game view, where the beam leaves the screen. age:
-	 * milliseconds since the burst began; it drives every movement.
+	 * milliseconds since the burst began; it drives every movement. season: the holiday it is dressed for. At Halloween
+	 * the rune disc is a jack-o'-lantern and the lights climbing the beam are bats.
 	 */
-	static void paintBurst(Graphics2D g, AffineTransform ground, int footX, int footY, int top, long age)
+	static void paintBurst(Graphics2D g, AffineTransform ground, int footX, int footY, int top, long age, Season season)
 	{
 		double tileWide = Math.hypot(ground.getScaleX(), ground.getShearX());
 		int w = (int) Math.max(22, Math.min(90, Math.round(tileWide * 0.62)));   // the beam is a little over half a tile wide
@@ -209,7 +215,44 @@ final class DropCard
 		floor.fill(new Ellipse2D.Float(-pool, -pool, 2 * pool, 2 * pool));
 		floor.dispose();
 
-		// The rune disc turning on the floor, and the ring at its heart
+		boolean halloween = season == Season.HALLOWEEN;
+		if (halloween)
+		{
+			pumpkin(g, ground, swell);
+		}
+		else
+		{
+			runeDisc(g, ground, age, swell);
+		}
+
+		// One ring racing outward along the floor as the beam lands
+		float raced = (age - 120) / 900f;
+		if (raced > 0 && raced < 1)
+		{
+			g.setStroke(new BasicStroke(3f));
+			g.setColor(new Color(255, 246, 216, Math.round(230 * (1 - raced))));
+			g.draw(circle(ground, DISC * (0.75 + 2.2 * ease(raced))));
+		}
+
+		beamAndLights(g, footX, footY, top, age, w, swell, halloween);
+
+		// The white-hot foot of the beam, lying on the floor under the character. Smaller on the pumpkin, to leave its
+		// face in view.
+		float foot = (halloween ? 0.2f : 0.42f) * ease(Math.min(1f, age / 320f));
+		if (foot > 0.02f)
+		{
+			Graphics2D lying = (Graphics2D) g.create();
+			lying.transform(ground);
+			lying.setPaint(new RadialGradientPaint(0, 0, foot, new float[]{0f, 0.35f, 0.6f, 1f},
+				new Color[]{Color.WHITE, Color.WHITE, new Color(255, 238, 160, 235), new Color(255, 196, 64, 0)}));
+			lying.fill(new Ellipse2D.Float(-foot, -foot, 2 * foot, 2 * foot));
+			lying.dispose();
+		}
+	}
+
+	// The rune disc turning on the floor, and the ring at its heart
+	private static void runeDisc(Graphics2D g, AffineTransform ground, long age, float swell)
+	{
 		g.setStroke(new BasicStroke(1.6f));
 		g.setColor(new Color(255, 214, 110, 235));
 		g.draw(circle(ground, DISC * 0.94));
@@ -229,16 +272,68 @@ final class DropCard
 		g.setStroke(new BasicStroke(2f));
 		g.setColor(new Color(254, 222, 122, 230));
 		g.draw(circle(ground, ring));
+	}
 
-		// One ring racing outward along the floor as the beam lands
-		float raced = (age - 120) / 900f;
-		if (raced > 0 && raced < 1)
+	/**
+	 * The jack-o'-lantern lying on the floor where the rune disc is, its stem pointing up the screen wherever the
+	 * camera looks from, with candlelight in its face.
+	 */
+	private static void pumpkin(Graphics2D g, AffineTransform ground, float swell)
+	{
+		Graphics2D floor = (Graphics2D) g.create();
+		floor.transform(ground);
+		try
 		{
-			g.setStroke(new BasicStroke(3f));
-			g.setColor(new Color(255, 246, 216, Math.round(230 * (1 - raced))));
-			g.draw(circle(ground, DISC * (0.75 + 2.2 * ease(raced))));
+			Point2D up = ground.createInverse().deltaTransform(new Point2D.Double(0, -1), null);
+			floor.rotate(Math.atan2(up.getX(), -up.getY()));
 		}
+		catch (NoninvertibleTransformException e)
+		{
+			// a floor seen exactly edge on: left as it lies
+		}
+		float r = (float) DISC;
+		Ellipse2D body = new Ellipse2D.Float(-r, -0.9f * r, 2 * r, 1.8f * r);
+		floor.setPaint(new RadialGradientPaint(0, -0.1f * r, r * 1.05f, new float[]{0f, 0.7f, 1f},
+			new Color[]{new Color(255, 160, 50, 235), new Color(236, 110, 20, 235), new Color(168, 70, 8, 235)}));
+		floor.fill(body);
+		floor.setStroke(new BasicStroke(0.035f));
+		floor.setColor(new Color(150, 62, 6, 210));
+		for (float rib : new float[]{0.36f, 0.7f})
+		{
+			floor.draw(new Ellipse2D.Float(-rib * r, -0.9f * r, 2 * rib * r, 1.8f * r));
+		}
+		floor.draw(body);
+		floor.setColor(new Color(92, 122, 46, 240));
+		floor.fill(new RoundRectangle2D.Float(-0.09f * r, -1.12f * r, 0.18f * r, 0.3f * r, 0.06f * r, 0.06f * r));
 
+		// The face: two eyes, a nose and a jagged grin, lit from inside
+		float[][][] cuts = {
+			{{-0.52f, -0.18f}, {-0.22f, -0.18f}, {-0.37f, -0.46f}},
+			{{0.52f, -0.18f}, {0.22f, -0.18f}, {0.37f, -0.46f}},
+			{{-0.08f, 0.08f}, {0.08f, 0.08f}, {0f, -0.08f}},
+			{{-0.62f, 0.2f}, {-0.4f, 0.32f}, {-0.28f, 0.2f}, {-0.14f, 0.34f}, {0f, 0.2f}, {0.14f, 0.34f}, {0.28f, 0.2f}, {0.4f, 0.32f}, {0.62f, 0.2f},
+				{0.46f, 0.56f}, {0.3f, 0.5f}, {0.18f, 0.66f}, {0f, 0.56f}, {-0.18f, 0.66f}, {-0.3f, 0.5f}, {-0.46f, 0.56f}},
+		};
+		Path2D face = new Path2D.Float();
+		for (float[][] cut : cuts)
+		{
+			face.moveTo(cut[0][0] * r, cut[0][1] * r);
+			for (int i = 1; i < cut.length; i++)
+			{
+				face.lineTo(cut[i][0] * r, cut[i][1] * r);
+			}
+			face.closePath();
+		}
+		floor.setColor(new Color(255, 240, 150, Math.round(205 + 50 * swell)));
+		floor.fill(face);
+		floor.dispose();
+	}
+
+	/**
+	 * The beam, and what climbs it: small lights, or bats at Halloween.
+	 */
+	private static void beamAndLights(Graphics2D g, int footX, int footY, int top, long age, int w, float swell, boolean bats)
+	{
 		// The beam shoots up from the floor in the first third of a second, then breathes. Brightest near the floor,
 		// fading as it climbs: drawn in bands, each with its own strength.
 		float risen = ease(Math.min(1f, age / 320f));
@@ -261,11 +356,12 @@ final class DropCard
 			g.fillRect(footX - halo, y, 2 * halo, Math.min(4, footY - y));
 		}
 
-		// Small lights climbing the beam
-		int strip = Math.round(w * 1.4f);
+		// What climbs the beam. Bats are fewer than the lights and spread wider, sway as they rise and beat their wings.
+		int strip = Math.round(w * (bats ? 2.6f : 1.4f));
 		int slid = (int) (age * MOTE_TILE / 2600 % MOTE_TILE);
-		for (float[] mote : MOTES)
+		for (int i = 0; i < MOTES.length; i += bats ? 2 : 1)
 		{
+			float[] mote = MOTES[i];
 			for (int y = footY - (int) ((mote[1] + slid) % MOTE_TILE); y > beamTop; y -= MOTE_TILE)
 			{
 				float up = (float) (footY - y) / length;
@@ -275,24 +371,61 @@ final class DropCard
 					continue;
 				}
 				int x = footX - strip / 2 + Math.round(mote[0] * strip);
+				if (bats)
+				{
+					double sway = Math.sin(age / 400.0 + i) * w * 0.2;
+					double beat = 0.5 + 0.5 * Math.sin(age / 70.0 + i * 1.7);
+					bat(g, x + sway, y, Math.max(16, w * 0.55), beat, seen);
+					continue;
+				}
 				g.setColor(new Color(255, 242, 173, Math.round(150 * seen)));
 				g.fillOval(x - 3, y - 3, 6, 6);
 				g.setColor(new Color(255, 255, 255, Math.round(255 * seen)));
 				g.fillOval(x - 1, y - 1, 3, 3);
 			}
 		}
+	}
 
-		// The white-hot foot of the beam, lying on the floor under the character
-		float foot = 0.42f * risen;
-		if (foot > 0.02f)
-		{
-			Graphics2D lying = (Graphics2D) g.create();
-			lying.transform(ground);
-			lying.setPaint(new RadialGradientPaint(0, 0, foot, new float[]{0f, 0.35f, 0.6f, 1f},
-				new Color[]{Color.WHITE, Color.WHITE, new Color(255, 238, 160, 235), new Color(255, 196, 64, 0)}));
-			lying.fill(new Ellipse2D.Float(-foot, -foot, 2 * foot, 2 * foot));
-			lying.dispose();
-		}
+	// One bat, so many pixels across with its wings spread. beat: 0 wings folded in, 1 spread. A pale purple edge
+	// keeps it readable where it flies off the beam onto dark ground.
+	private static void bat(Graphics2D g, double x, double y, double wide, double beat, float seen)
+	{
+		Graphics2D b = (Graphics2D) g.create();
+		b.translate(x, y);
+		double size = wide / 64.0;
+		b.scale(size * (0.55 + 0.45 * beat), size);
+		b.setStroke(new BasicStroke(4f));
+		b.setColor(new Color(201, 168, 255, Math.round(140 * seen)));
+		b.draw(BAT);
+		b.setColor(new Color(21, 13, 31, Math.round(255 * seen)));
+		b.fill(BAT);
+		b.dispose();
+	}
+
+	// osrslootsim.com's own bat drawing (img/season/halloween/bat.svg), 64 by 34, centred on its middle
+	private static Path2D bat()
+	{
+		Path2D bat = new Path2D.Float();
+		bat.moveTo(0f, -8f);
+		bat.lineTo(-2.6f, -14.5f);
+		bat.lineTo(-4.2f, -8.2f);
+		bat.curveTo(-5.9f, -7.2f, -6.9f, -5.5f, -7.1f, -3.6f);
+		bat.curveTo(-11.4f, -8.8f, -17.6f, -11.3f, -24.7f, -10.5f);
+		bat.curveTo(-27.5f, -10.1f, -30.1f, -8.8f, -32f, -6.8f);
+		bat.curveTo(-27.2f, -6.5f, -24.1f, -3.6f, -23.3f, 0.7f);
+		bat.curveTo(-21.2f, -1.3f, -18.3f, -1.3f, -16.2f, 0.8f);
+		bat.curveTo(-14.9f, -1.4f, -12f, -2.1f, -10f, -0.2f);
+		bat.curveTo(-8.8f, 4.2f, -5.7f, 10.1f, 0f, 16f);
+		bat.curveTo(5.7f, 10.1f, 8.8f, 4.2f, 10f, -0.2f);
+		bat.curveTo(12f, -2.1f, 14.9f, -1.4f, 16.2f, 0.8f);
+		bat.curveTo(18.3f, -1.3f, 21.2f, -1.3f, 23.3f, 0.7f);
+		bat.curveTo(24.1f, -3.6f, 27.2f, -6.5f, 32f, -6.8f);
+		bat.curveTo(30.1f, -8.8f, 27.5f, -10.1f, 24.7f, -10.5f);
+		bat.curveTo(17.6f, -11.3f, 11.4f, -8.8f, 7.1f, -3.6f);
+		bat.curveTo(6.9f, -5.5f, 5.9f, -7.2f, 4.2f, -8.2f);
+		bat.lineTo(2.6f, -14.5f);
+		bat.closePath();
+		return bat;
 	}
 
 	private static Color gold(float alpha)

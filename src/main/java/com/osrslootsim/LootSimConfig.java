@@ -37,8 +37,8 @@ public interface LootSimConfig extends Config
 
 	@ConfigItem(
 		keyName = "holidayIcon",
-		name = "Holiday icon and sound",
-		description = "Dress the Looting icon, and the insane drop's sound, for Halloween, Thanksgiving and Christmas",
+		name = "Holiday looks and sound",
+		description = "Dress the Looting icon, the loot beam and the insane drop's sound for Halloween, Thanksgiving and Christmas",
 		position = 2
 	)
 	default boolean holidayIcon()
