@@ -96,11 +96,16 @@ public final class PanelPreview
 			SwingUtilities.invokeAndWait(() -> done[0] = panel.hasRun() || !panel.statusText().isEmpty());
 		}
 		Thread.sleep(300);
+		boolean ran = panel.hasRun();
+		String status = panel.statusText();
 		draw(panel, out);   // the chances block closed, as it starts
 		SwingUtilities.invokeAndWait(() -> panel.showChances(true));
 		draw(panel, out.replace(".png", "-open.png"));
-		System.out.println("ran: " + panel.hasRun() + ", status: \"" + panel.statusText() + "\", xp now " + account.xp());
-		System.exit(panel.hasRun() ? 0 : 1);
+		SwingUtilities.invokeAndWait(panel::clearRun);
+		draw(panel, out.replace(".png", "-cleared.png"));
+		SwingUtilities.invokeAndWait(() -> System.out.println("after Clear, a run is shown: " + panel.hasRun()));
+		System.out.println("ran: " + ran + ", status: \"" + status + "\", xp now " + account.xp());
+		System.exit(ran ? 0 : 1);
 	}
 
 	private static void draw(LootSimPanel panel, String file) throws Exception

@@ -54,6 +54,8 @@ final class LootSimPanel extends PluginPanel
 	// The least time between two runs. The site allows 20 a minute, so a row of fast presses would be turned away.
 	private static final int COOLDOWN_MS = 3000;
 	private static final int GAP = 7;
+	// The site's own address for adding its Discord bot (/kill); the tag tells the site's visit count where it came from
+	private static final String DISCORD_URL = LootSimApi.SITE + "/discord?utm_source=runelite";
 	private static final int TEXT_WIDTH = PANEL_WIDTH - 2 * BORDER_OFFSET;
 	private static final Color HEADER_COLOR = ColorScheme.DARKER_GRAY_COLOR.darker();
 	private static final Font SMALL = FontManager.getRunescapeSmallFont();
@@ -75,6 +77,7 @@ final class LootSimPanel extends PluginPanel
 	private final JTextField killsField = new JTextField("100");
 	private final JButton kcButton = new JButton("My KC");
 	private final JButton simulateButton = new JButton("Simulate");
+	private final JButton clearButton = new JButton("Clear");
 	private final JPanel status = new JPanel(new GridLayout(0, 1));
 
 	private final JPanel lootPanel = new JPanel(new BorderLayout(0, 1));
@@ -161,7 +164,19 @@ final class LootSimPanel extends PluginPanel
 		simulateButton.setForeground(ColorScheme.DARKER_GRAY_COLOR);
 		simulateButton.setPreferredSize(new Dimension(0, 30));
 		simulateButton.addActionListener(e -> simulate());
-		addRow(simulateButton);
+		clearButton.setFont(SMALL);
+		clearButton.setFocusPainted(false);
+		clearButton.setBackground(ColorScheme.PROGRESS_ERROR_COLOR);
+		clearButton.setForeground(Color.WHITE);
+		clearButton.setMargin(new Insets(2, 4, 2, 4));   // the look and feel's own side margins would cut the word short
+		clearButton.setPreferredSize(new Dimension(56, 30));
+		clearButton.setToolTipText("Clear the loot shown below");
+		clearButton.setEnabled(false);
+		clearButton.addActionListener(e -> clearRun());
+		JPanel runRow = clear(new JPanel(new BorderLayout(4, 0)));
+		runRow.add(simulateButton, BorderLayout.CENTER);
+		runRow.add(clearButton, BorderLayout.EAST);
+		addRow(runRow);
 
 		clear(status).setVisible(false);
 		addRow(status);
@@ -199,15 +214,10 @@ final class LootSimPanel extends PluginPanel
 		addRow(dryPanel);
 		showChances(false);
 
-		JButton siteLink = new JButton("Open on osrslootsim.com");
-		siteLink.setFont(SMALL);
-		siteLink.setForeground(ColorScheme.BRAND_ORANGE);
-		siteLink.setContentAreaFilled(false);
-		siteLink.setBorderPainted(false);
-		siteLink.setFocusPainted(false);
-		siteLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		siteLink.addActionListener(e -> LinkBrowser.browse(siteUrl));
-		addRow(siteLink);
+		JPanel links = clear(new JPanel(new GridLayout(0, 1)));
+		links.add(link("Open on osrslootsim.com", "The full simulator in your browser", () -> LinkBrowser.browse(siteUrl)));
+		links.add(link("Add the Discord bot", "Simulate kills in your own Discord server with /kill", () -> LinkBrowser.browse(DISCORD_URL)));
+		addRow(links);
 
 		bossChanged();
 		showLevel(0);
@@ -358,6 +368,7 @@ final class LootSimPanel extends PluginPanel
 
 		siteUrl = run.url != null && run.url.startsWith(LootSimApi.SITE + "/") ? run.url : LootSimApi.SITE;
 		hasRun = true;
+		clearButton.setEnabled(true);
 
 		if (account.known() && run.xp > 0)
 		{
@@ -376,6 +387,22 @@ final class LootSimPanel extends PluginPanel
 		}
 		revalidate();
 		repaint();
+	}
+
+	/**
+	 * Takes the last run off the panel. The Looting level and the boss stay.
+	 */
+	void clearRun()
+	{
+		lootGrid.removeAll();
+		dryRows.removeAll();
+		lootPanel.setVisible(false);
+		dryPanel.setVisible(false);
+		hasRun = false;
+		siteUrl = LootSimApi.SITE;
+		clearButton.setEnabled(false);
+		showLevel(0);   // the "+xp" belonged to the run that is gone
+		say("");
 	}
 
 	private JLabel cell(LootSimApi.Item item)
@@ -602,6 +629,23 @@ final class LootSimPanel extends PluginPanel
 		label.setFont(SMALL);
 		label.setForeground(color);
 		return label;
+	}
+
+	/**
+	 * A line of orange text that opens something in the browser when pressed.
+	 */
+	private static JButton link(String text, String tip, Runnable open)
+	{
+		JButton link = new JButton(text);
+		link.setFont(SMALL);
+		link.setForeground(ColorScheme.BRAND_ORANGE);
+		link.setToolTipText(tip);
+		link.setContentAreaFilled(false);
+		link.setBorderPainted(false);
+		link.setFocusPainted(false);
+		link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		link.addActionListener(e -> open.run());
+		return link;
 	}
 
 	private static JPanel clear(JPanel panel)

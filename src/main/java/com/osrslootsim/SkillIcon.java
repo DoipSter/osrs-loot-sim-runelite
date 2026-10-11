@@ -9,16 +9,15 @@ import net.runelite.client.util.ImageUtil;
 
 /**
  * The Looting skill icon beside the level, as on osrslootsim.com: a loot beam over a stack of coins that fires every
- * three seconds, dressed for the holiday in season. It moves only while the panel is open. With the movement switched
- * off it is the still icon at the same scale.
+ * three seconds, dressed for the holiday in season, at the icon's own 16-pixel size (a holiday's has a little room
+ * around it for what flies out). It moves only while the panel is open. With the movement switched off it is the
+ * still icon.
  */
 final class SkillIcon extends JComponent
 {
 	// Every strip holds the same three-second loop: this many frames side by side, at this many a second
 	private static final int FRAMES = 45;
 	private static final int FRAMES_PER_SECOND = 15;
-	// The strips are drawn at twice the 16-pixel icon's size, so the still icon is doubled to match
-	private static final int STILL_SCALE = 2;
 
 	private final Timer timer = new Timer(1000 / FRAMES_PER_SECOND, e -> step());
 	private BufferedImage strip;
@@ -44,8 +43,7 @@ final class SkillIcon extends JComponent
 		}
 		this.season = season;
 		this.moving = moving;
-		BufferedImage small = ImageUtil.loadImageResource(SkillIcon.class, season.still());
-		still = ImageUtil.resizeImage(small, small.getWidth() * STILL_SCALE, small.getHeight() * STILL_SCALE, false);
+		still = ImageUtil.loadImageResource(SkillIcon.class, season.still());
 		strip = moving ? ImageUtil.loadImageResource(SkillIcon.class, season.strip()) : null;
 		frame = 0;
 		setPreferredSize(strip != null ? new Dimension(strip.getWidth() / FRAMES, strip.getHeight())
