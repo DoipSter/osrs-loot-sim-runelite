@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import javax.swing.SwingUtilities;
@@ -39,7 +40,11 @@ final class LootSimApi
 
 	static final class BossList
 	{
+		// What the boss box lists before anything is typed
 		List<Boss> bosses;
+		// Everything a search looks through, and the short names that lead to one of them ("cox"). Both may be missing.
+		List<String> all;
+		Map<String, String> aliases;
 		int maxKills;
 	}
 

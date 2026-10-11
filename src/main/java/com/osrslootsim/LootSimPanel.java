@@ -12,25 +12,19 @@ import java.awt.Graphics;
 import java.awt.GridLayout;
 import java.awt.Insets;
 import java.awt.LayoutManager;
-import java.awt.image.BufferedImage;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import javax.swing.BorderFactory;
-import javax.swing.DefaultComboBoxModel;
-import javax.swing.DefaultListCellRenderer;
-import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
-import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
-import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
 import javax.swing.SwingConstants;
@@ -61,7 +55,6 @@ final class LootSimPanel extends PluginPanel
 	private static final int GAP = 7;
 	private static final int TEXT_WIDTH = PANEL_WIDTH - 2 * BORDER_OFFSET;
 	private static final Color HEADER_COLOR = ColorScheme.DARKER_GRAY_COLOR.darker();
-	private static final Icon NO_BOSS_ICON = new ImageIcon(new BufferedImage(18, 18, BufferedImage.TYPE_INT_ARGB));
 	private static final Font SMALL = FontManager.getRunescapeSmallFont();
 
 	private final LootSimApi api;
@@ -73,11 +66,8 @@ final class LootSimPanel extends PluginPanel
 	private final LevelBar levelBar = new LevelBar();
 	private final JPanel levelPanel = new JPanel(new BorderLayout(0, 3));
 
-	private final DefaultComboBoxModel<String> bossModel = new DefaultComboBoxModel<>(QUICK);
-	private final JComboBox<String> bossBox = new JComboBox<>(bossModel);
+	private final BossPicker picker;
 	private final Map<String, JButton> quickButtons = new LinkedHashMap<>();
-	private final Map<String, Icon> bossIcons = new HashMap<>();
-	private final Set<String> bossIconsAsked = new HashSet<>();
 
 	private final JTextField killsField = new JTextField("100");
 	private final JButton kcButton = new JButton("My KC");
@@ -97,7 +87,6 @@ final class LootSimPanel extends PluginPanel
 	private int maxKills = DEFAULT_MAX_KILLS;
 	private boolean bossesLoaded;
 	private boolean bossesLoading;
-	private boolean fillingBosses;
 	private boolean hasRun;
 	private String statusText = "";
 	private String siteUrl = LootSimApi.SITE;
@@ -125,13 +114,9 @@ final class LootSimPanel extends PluginPanel
 		levelPanel.add(levelBar, BorderLayout.SOUTH);
 		addRow(levelPanel);
 
-		bossBox.setFont(SMALL);
-		bossBox.setRenderer(new BossRenderer());
-		bossBox.setPrototypeDisplayValue("Chambers of Xeric");
-		bossBox.setMaximumRowCount(12);
-		bossBox.getAccessibleContext().setAccessibleName("Boss");
-		bossBox.addActionListener(e -> bossChanged());
-		addRow(bossBox);
+		picker = new BossPicker(icons, Arrays.asList(QUICK), QUICK[0]);
+		picker.onChange(this::bossChanged);
+		addRow(picker);
 
 		JPanel quick = clear(new JPanel(new GridLayout(1, QUICK.length, 4, 0)));
 		for (String name : QUICK)
@@ -142,15 +127,8 @@ final class LootSimPanel extends PluginPanel
 			button.setPreferredSize(new Dimension(0, 30));
 			button.setFocusPainted(false);
 			button.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-			button.addActionListener(e -> bossBox.setSelectedItem(name));
-			icons.boss(name, image ->
-			{
-				ImageIcon icon = new ImageIcon(image);
-				bossIcons.put(name, icon);
-				button.setIcon(icon);
-				bossBox.repaint();
-			});
-			bossIconsAsked.add(name);
+			button.addActionListener(e -> picker.select(name));
+			icons.boss(name, image -> button.setIcon(new ImageIcon(image)));
 			quickButtons.put(name, button);
 			quick.add(button);
 		}
@@ -245,9 +223,14 @@ final class LootSimPanel extends PluginPanel
 		return statusText;
 	}
 
+	BossPicker picker()
+	{
+		return picker;
+	}
+
 	void simulate()
 	{
-		String boss = (String) bossBox.getSelectedItem();
+		String boss = picker.selected();
 		if (boss == null || !simulateButton.isEnabled())
 		{
 			return;
@@ -264,7 +247,7 @@ final class LootSimPanel extends PluginPanel
 		long started = System.currentTimeMillis();
 		api.simulate(boss, kills, run ->
 		{
-			show(run);
+			showRun(run);
 			rest(started);
 		}, error ->
 		{
@@ -285,7 +268,7 @@ final class LootSimPanel extends PluginPanel
 		timer.start();
 	}
 
-	private void show(LootSimApi.Run run)
+	private void showRun(LootSimApi.Run run)
 	{
 		String name = Text.plain(run.name, 60);
 		String unit = Text.plural(run.unit);
@@ -408,7 +391,7 @@ final class LootSimPanel extends PluginPanel
 
 	private void fillKillCount()
 	{
-		String boss = (String) bossBox.getSelectedItem();
+		String boss = picker.selected();
 		if (boss == null)
 		{
 			return;
@@ -442,11 +425,7 @@ final class LootSimPanel extends PluginPanel
 
 	private void bossChanged()
 	{
-		if (fillingBosses)
-		{
-			return;
-		}
-		Object selected = bossBox.getSelectedItem();
+		String selected = picker.selected();
 		for (Map.Entry<String, JButton> quick : quickButtons.entrySet())
 		{
 			boolean on = quick.getKey().equals(selected);
@@ -455,8 +434,8 @@ final class LootSimPanel extends PluginPanel
 	}
 
 	/**
-	 * Asks the site for the picker's list the first time the panel is opened. Until it arrives, and if it never does,
-	 * the picker holds the five quick bosses.
+	 * Asks the site for the boss box's lists the first time the panel is opened. Until they arrive, and if they never
+	 * do, the box holds the five quick bosses.
 	 */
 	private void loadBosses()
 	{
@@ -486,27 +465,34 @@ final class LootSimPanel extends PluginPanel
 			{
 				names.add(name);
 			}
-			Object selected = bossBox.getSelectedItem();
-			fillingBosses = true;
-			bossModel.removeAllElements();
-			bossModel.addAll(names);
-			bossBox.setSelectedItem(names.contains(selected) ? selected : QUICK[0]);
-			fillingBosses = false;
-			bossChanged();
-		}, error -> bossesLoading = false);
-	}
-
-	private Icon bossIcon(String name)
-	{
-		if (bossIconsAsked.add(name))
-		{
-			icons.boss(name, image ->
+			List<String> all = new ArrayList<>();
+			if (list.all != null)
 			{
-				bossIcons.put(name, new ImageIcon(image));
-				bossBox.repaint();
-			});
-		}
-		return bossIcons.getOrDefault(name, NO_BOSS_ICON);
+				for (String name : list.all)
+				{
+					String clean = Text.plain(name, 60);
+					if (!clean.isEmpty())
+					{
+						all.add(clean);
+					}
+				}
+			}
+			Set<String> known = new LinkedHashSet<>(names);
+			known.addAll(all);
+			Map<String, String> aliases = new HashMap<>();
+			if (list.aliases != null)
+			{
+				for (Map.Entry<String, String> alias : list.aliases.entrySet())
+				{
+					String name = Text.plain(alias.getValue(), 60);
+					if (alias.getKey() != null && known.contains(name))
+					{
+						aliases.put(Text.plain(alias.getKey(), 40), name);
+					}
+				}
+			}
+			picker.setBosses(new ArrayList<>(names), all, aliases);
+		}, error -> bossesLoading = false);
 	}
 
 	/**
@@ -658,25 +644,6 @@ final class LootSimPanel extends PluginPanel
 			g.fillRect(0, 0, getWidth(), getHeight());
 			g.setColor(ColorScheme.BRAND_ORANGE);
 			g.fillRect(0, 0, (int) Math.round(getWidth() * fraction), getHeight());
-		}
-	}
-
-	/**
-	 * A boss in the picker: its hiscores picture, when it has one, and its name.
-	 */
-	private final class BossRenderer extends DefaultListCellRenderer
-	{
-		@Override
-		public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean selected, boolean focused)
-		{
-			super.getListCellRendererComponent(list, value, index, selected, focused);
-			putClientProperty("html.disable", Boolean.TRUE);
-			String name = value == null ? "" : value.toString();
-			setText(name);
-			setFont(SMALL);
-			setIcon(name.isEmpty() ? NO_BOSS_ICON : bossIcon(name));
-			setIconTextGap(8);
-			return this;
 		}
 	}
 

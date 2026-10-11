@@ -57,6 +57,32 @@ public final class PanelPreview
 		Thread.sleep(2500);   // the boss list
 		draw(panel, out.replace(".png", "-start.png"));
 
+		// The boss box: emptied it is a drop-down of the usual bosses, with text in it a search of everything
+		BossPicker picker = panel.picker();
+		SwingUtilities.invokeAndWait(() ->
+		{
+			picker.type("x");
+			picker.type("");
+		});
+		draw(panel, out.replace(".png", "-empty.png"));
+		for (String text : new String[]{"cox", "vork", "gob", "clue", "zzzz", "ab"})
+		{
+			SwingUtilities.invokeAndWait(() ->
+			{
+				picker.type(text);
+				List<String> rows = picker.shown();
+				System.out.println("\"" + text + "\" -> " + rows.size() + ": " + rows.subList(0, Math.min(6, rows.size())));
+			});
+		}
+		draw(panel, out.replace(".png", "-search.png"));
+		String wanted = args.length > 3 ? args[3] : "";
+		SwingUtilities.invokeAndWait(() ->
+		{
+			picker.type(wanted.isEmpty() ? "vorkath" : wanted);
+			picker.choose(0);
+			System.out.println("picked: " + picker.selected());
+		});
+
 		SwingUtilities.invokeAndWait(panel::simulate);
 		long deadline = System.currentTimeMillis() + 30_000;
 		boolean[] done = new boolean[1];

@@ -32,8 +32,9 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 // Draws the side panel to a PNG without starting the game, for looking at layout changes:
-//   gradlew panelPreview -Pout=build/panel.png -Papi=http://127.0.0.1:8777 -Psite=../osrs-loot-sim
+//   gradlew panelPreview -Pout=build/panel.png -Papi=http://127.0.0.1:8777 -Psite=../osrs-loot-sim -Pboss="abyssal d"
 // api: where the simulator answers. site: a checkout of the website, for stand-in item and boss pictures (optional).
+// boss: what to type in the boss box before the run; the first match is picked (optional).
 tasks.register('panelPreview', JavaExec) {
 	classpath = sourceSets.test.runtimeClasspath
 	mainClass = 'com.osrslootsim.PanelPreview'
@@ -41,6 +42,7 @@ tasks.register('panelPreview', JavaExec) {
 	args = [
 		project.findProperty('out') ?: 'build/panel.png',
 		project.findProperty('api') ?: 'https://osrslootsim.com',
-		project.findProperty('site') ?: ''
+		project.findProperty('site') ?: '',
+		project.findProperty('boss') ?: ''
 	]
 }
