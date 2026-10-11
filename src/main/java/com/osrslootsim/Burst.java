@@ -647,7 +647,7 @@ final class Burst
 		double startX = 0;
 		double startY = 0;
 		boolean open = false;
-		for (PathIterator it = shape.getPathIterator(null, 0.008); !it.isDone(); it.next())
+		for (PathIterator it = shape.getPathIterator(null, 0.004); !it.isDone(); it.next())
 		{
 			int kind = it.currentSegment(at);
 			if (kind == PathIterator.SEG_CLOSE)
