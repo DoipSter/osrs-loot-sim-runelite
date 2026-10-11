@@ -7,6 +7,9 @@ kills and press Simulate.
   revenants, on a slayer task.
 - The loot of the run as item pictures with their stack counts, and its total value at Grand Exchange prices.
 - Your chance of having seen each rare drop by that many kills, in a list you open when you want it.
+- A pop-up when a run has an insane drop (a collection log item rarer than 1/2,000, or anything worth 10m or more):
+  a small card in the chatbox, or a full card with a loot beam in front of your character. It says the drop is
+  simulated, goes after a few seconds, and can be switched off in the plugin's settings.
 - **My KC** fills in your own kill count for the boss, from the official hiscores or the count RuneLite last saw in
   chat, whichever is higher. **Clear** takes the last run off the panel.
 - A **Looting level** from 1 to 99, earned by simulating. It is saved per RuneScape account in RuneLite's own settings

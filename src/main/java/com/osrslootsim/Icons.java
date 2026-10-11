@@ -16,6 +16,12 @@ interface Icons
 	void item(JLabel label, int id, String name, long quantity);
 
 	/**
+	 * Hands over an item's inventory picture, without a stack count, for drawing over the game. It may be handed over
+	 * before it has finished loading, and on any thread.
+	 */
+	void picture(int id, String name, Consumer<BufferedImage> use);
+
+	/**
 	 * Hands over the boss's hiscores picture on the Swing thread, if it has one.
 	 */
 	void boss(String name, Consumer<BufferedImage> use);

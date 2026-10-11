@@ -28,4 +28,15 @@ public interface LootSimConfig extends Config
 	{
 		return true;
 	}
+
+	@ConfigItem(
+		keyName = "insaneDropPopup",
+		name = "Insane drop pop-up",
+		description = "Where to show a pop-up when a simulated run has an insane drop: a collection log item rarer than 1/2,000, or anything worth 10m or more",
+		position = 3
+	)
+	default PopupPlace insaneDropPopup()
+	{
+		return PopupPlace.CHAT;
+	}
 }

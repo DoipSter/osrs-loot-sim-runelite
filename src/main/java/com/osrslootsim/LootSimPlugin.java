@@ -26,6 +26,7 @@ import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
+import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.util.ImageUtil;
 import okhttp3.OkHttpClient;
 
@@ -81,8 +82,12 @@ public class LootSimPlugin extends Plugin implements Account
 	@Inject
 	private HiscoreClient hiscoreClient;
 
+	@Inject
+	private OverlayManager overlayManager;
+
 	private LootSimPanel panel;
 	private NavigationButton navButton;
+	private DropPopups popups;
 
 	@Provides
 	LootSimConfig provideConfig(ConfigManager configManager)
@@ -93,8 +98,11 @@ public class LootSimPlugin extends Plugin implements Account
 	@Override
 	protected void startUp()
 	{
-		panel = new LootSimPanel(new LootSimApi(okHttpClient, gson),
-			new GameIcons(client, clientThread, itemManager, spriteManager), this, config);
+		GameIcons icons = new GameIcons(client, clientThread, itemManager, spriteManager);
+		popups = new DropPopups(client, config, icons, overlayManager);
+		popups.start();
+		panel = new LootSimPanel(new LootSimApi(okHttpClient, gson), icons, this, config);
+		panel.onRun(popups::ran);
 		BufferedImage icon = ImageUtil.loadImageResource(LootSimPlugin.class, "icon.png");
 		navButton = NavigationButton.builder()
 			.tooltip("OSRS Loot Sim")
@@ -109,6 +117,8 @@ public class LootSimPlugin extends Plugin implements Account
 	protected void shutDown()
 	{
 		clientToolbar.removeNavigation(navButton);
+		popups.stop();
+		popups = null;
 		navButton = null;
 		panel = null;
 	}

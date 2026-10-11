@@ -36,6 +36,14 @@ tasks.withType(JavaCompile).configureEach {
 // api: where the simulator answers. site: a checkout of the website, for stand-in item and boss pictures (optional).
 // boss: what to type in the boss box before the run; the first match is picked (optional). set: choices for that
 // boss's options row (optional).
+// Draws the insane-drop pop-ups to a PNG: gradlew cardPreview -Pout=build/cards.png -Psprite=<an item's picture file>
+tasks.register('cardPreview', JavaExec) {
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.osrslootsim.CardPreview'
+	jvmArgs '-Djava.awt.headless=true'
+	args = [project.findProperty('out') ?: 'build/cards.png', project.findProperty('sprite') ?: '']
+}
+
 tasks.register('panelPreview', JavaExec) {
 	classpath = sourceSets.test.runtimeClasspath
 	mainClass = 'com.osrslootsim.PanelPreview'

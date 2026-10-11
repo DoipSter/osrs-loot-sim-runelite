@@ -21,6 +21,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import javax.swing.BorderFactory;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
@@ -97,6 +98,10 @@ final class LootSimPanel extends PluginPanel
 	// Nothing is asked of the site before the panel has been opened once
 	private boolean opened;
 	private boolean hasRun;
+	// Told of every run that arrives: the plugin's pop-ups listen
+	private Consumer<LootSimApi.Run> onRun = run ->
+	{
+	};
 	// Closed until the player opens it, then as they left it for the runs that follow
 	private boolean dryOpen;
 	private String statusText = "";
@@ -304,6 +309,11 @@ final class LootSimPanel extends PluginPanel
 		return optionsBar;
 	}
 
+	void onRun(Consumer<LootSimApi.Run> onRun)
+	{
+		this.onRun = onRun;
+	}
+
 	void simulate()
 	{
 		String boss = picker.selected();
@@ -379,6 +389,7 @@ final class LootSimPanel extends PluginPanel
 		siteUrl = run.url != null && run.url.startsWith(LootSimApi.SITE + "/") ? run.url : LootSimApi.SITE;
 		hasRun = true;
 		clearButton.setEnabled(true);
+		onRun.accept(run);
 
 		if (account.known() && run.xp > 0)
 		{

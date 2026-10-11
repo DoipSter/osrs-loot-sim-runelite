@@ -60,6 +60,17 @@ final class GameIcons implements Icons
 	}
 
 	@Override
+	public void picture(int id, String name, Consumer<BufferedImage> use)
+	{
+		if (id > 0)
+		{
+			use.accept(itemManager.getImage(id));
+			return;
+		}
+		byName(name, found -> use.accept(itemManager.getImage(found)));
+	}
+
+	@Override
 	public void boss(String name, Consumer<BufferedImage> use)
 	{
 		HiscoreSkill row = Hiscores.picture(name);

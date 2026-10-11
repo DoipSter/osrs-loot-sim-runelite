@@ -264,6 +264,16 @@ public final class PanelPreview
 		}
 
 		@Override
+		public void picture(int id, String name, Consumer<BufferedImage> use)
+		{
+			BufferedImage sprite = read("public/wimg/o/" + fileName(file(name, 1)));
+			if (sprite != null)
+			{
+				use.accept(sprite);
+			}
+		}
+
+		@Override
 		public void boss(String name, Consumer<BufferedImage> use)
 		{
 			String key = name.toLowerCase(Locale.ENGLISH).replaceAll("[^a-z0-9]", "");

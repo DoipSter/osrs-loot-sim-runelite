@@ -74,6 +74,9 @@ final class LootSimApi
 		long qty;
 		long value;
 		boolean rare;
+		// "insane" or "pet" for a drop the site would celebrate, with its rate as 1 in so many; nothing otherwise
+		String tier;
+		double rate;
 	}
 
 	static final class Dry
