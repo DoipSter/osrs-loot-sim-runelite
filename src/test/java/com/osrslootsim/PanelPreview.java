@@ -37,6 +37,8 @@ public final class PanelPreview
 {
 	private static final int WIDTH = 242;
 	private static final int MIN_HEIGHT = 503;
+	// The moving skill icon is drawn at this frame of its loop: the loot beam at full height
+	private static final int HELD_FRAME = 21;
 
 	public static void main(String[] args) throws Exception
 	{
@@ -49,7 +51,9 @@ public final class PanelPreview
 		LootSimPanel[] made = new LootSimPanel[1];
 		SwingUtilities.invokeAndWait(() ->
 		{
-			made[0] = new LootSimPanel(new LootSimApi(new OkHttpClient(), new Gson()), new FileIcons(site), account);
+			made[0] = new LootSimPanel(new LootSimApi(new OkHttpClient(), new Gson()), new FileIcons(site), account, new LootSimConfig()
+			{
+			});
 			made[0].onActivate();
 		});
 		LootSimPanel panel = made[0];
@@ -92,7 +96,9 @@ public final class PanelPreview
 			SwingUtilities.invokeAndWait(() -> done[0] = panel.hasRun() || !panel.statusText().isEmpty());
 		}
 		Thread.sleep(300);
-		draw(panel, out);
+		draw(panel, out);   // the chances block closed, as it starts
+		SwingUtilities.invokeAndWait(() -> panel.showChances(true));
+		draw(panel, out.replace(".png", "-open.png"));
 		System.out.println("ran: " + panel.hasRun() + ", status: \"" + panel.statusText() + "\", xp now " + account.xp());
 		System.exit(panel.hasRun() ? 0 : 1);
 	}
@@ -101,6 +107,7 @@ public final class PanelPreview
 	{
 		SwingUtilities.invokeAndWait(() ->
 		{
+			panel.skillIcon().hold(HELD_FRAME);
 			JPanel outer = panel.getWrappedPanel();
 			int height = Math.max(MIN_HEIGHT, panel.getPreferredSize().height + 2);
 			outer.setSize(WIDTH, height);

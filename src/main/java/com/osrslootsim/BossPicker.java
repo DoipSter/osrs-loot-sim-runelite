@@ -62,7 +62,7 @@ final class BossPicker extends JPanel
 	private final Icons icons;
 	private final JLabel picture = new JLabel(NO_ICON);
 	private final JTextField field = new JTextField();
-	private final JButton arrow = new JButton(new Arrow());
+	private final JButton arrow = new JButton(new Chevron(true));
 	private final DefaultListModel<String> results = new DefaultListModel<>();
 	private final JList<String> list = new JList<>(results);
 	private final JScrollPane scroll = new JScrollPane(list);
@@ -522,31 +522,4 @@ final class BossPicker extends JPanel
 		}
 	}
 
-	/**
-	 * The small down arrow at the end of the box.
-	 */
-	private static final class Arrow implements Icon
-	{
-		@Override
-		public void paintIcon(Component c, Graphics g, int x, int y)
-		{
-			Graphics2D g2 = (Graphics2D) g.create();
-			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-			g2.setColor(ColorScheme.LIGHT_GRAY_COLOR);
-			g2.drawPolyline(new int[]{x + 1, x + 5, x + 9}, new int[]{y + 2, y + 6, y + 2}, 3);
-			g2.dispose();
-		}
-
-		@Override
-		public int getIconWidth()
-		{
-			return 10;
-		}
-
-		@Override
-		public int getIconHeight()
-		{
-			return 8;
-		}
-	}
 }

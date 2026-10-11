@@ -1,6 +1,7 @@
 package com.osrslootsim;
 
 import com.google.gson.Gson;
+import com.google.inject.Provides;
 import java.awt.image.BufferedImage;
 import java.util.HashMap;
 import java.util.Locale;
@@ -11,6 +12,7 @@ import net.runelite.api.Client;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.events.RuneScapeProfileChanged;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.SpriteManager;
@@ -28,7 +30,7 @@ import okhttp3.OkHttpClient;
 )
 public class LootSimPlugin extends Plugin implements Account
 {
-	private static final String CONFIG_GROUP = "osrslootsim";
+	static final String CONFIG_GROUP = "osrslootsim";
 	private static final String XP_KEY = "xp";
 
 	// Where RuneLite's own Chat Commands plugin keeps the kill counts it reads from chat, under the boss's name in
@@ -67,14 +69,23 @@ public class LootSimPlugin extends Plugin implements Account
 	@Inject
 	private Gson gson;
 
+	@Inject
+	private LootSimConfig config;
+
 	private LootSimPanel panel;
 	private NavigationButton navButton;
+
+	@Provides
+	LootSimConfig provideConfig(ConfigManager configManager)
+	{
+		return configManager.getConfig(LootSimConfig.class);
+	}
 
 	@Override
 	protected void startUp()
 	{
 		panel = new LootSimPanel(new LootSimApi(okHttpClient, gson),
-			new GameIcons(client, clientThread, itemManager, spriteManager), this);
+			new GameIcons(client, clientThread, itemManager, spriteManager), this, config);
 		BufferedImage icon = ImageUtil.loadImageResource(LootSimPlugin.class, "icon.png");
 		navButton = NavigationButton.builder()
 			.tooltip("OSRS Loot Sim")
@@ -91,6 +102,22 @@ public class LootSimPlugin extends Plugin implements Account
 		clientToolbar.removeNavigation(navButton);
 		navButton = null;
 		panel = null;
+	}
+
+	@Subscribe
+	public void onConfigChanged(ConfigChanged event)
+	{
+		if (!CONFIG_GROUP.equals(event.getGroup()))
+		{
+			return;
+		}
+		SwingUtilities.invokeLater(() ->
+		{
+			if (panel != null)
+			{
+				panel.settingsChanged();
+			}
+		});
 	}
 
 	@Subscribe

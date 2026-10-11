@@ -12,6 +12,7 @@ import java.awt.Graphics;
 import java.awt.GridLayout;
 import java.awt.Insets;
 import java.awt.LayoutManager;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -60,10 +61,12 @@ final class LootSimPanel extends PluginPanel
 	private final LootSimApi api;
 	private final Icons icons;
 	private final Account account;
+	private final LootSimConfig config;
 
 	private final JLabel levelLabel = label("", Color.WHITE);
 	private final JLabel gainLabel = label("", ColorScheme.GRAND_EXCHANGE_PRICE);
 	private final LevelBar levelBar = new LevelBar();
+	private final SkillIcon skillIcon = new SkillIcon();
 	private final JPanel levelPanel = new JPanel(new BorderLayout(0, 3));
 
 	private final BossPicker picker;
@@ -81,21 +84,25 @@ final class LootSimPanel extends PluginPanel
 	private final JLabel moreLabel = label("", ColorScheme.LIGHT_GRAY_COLOR);
 
 	private final JPanel dryPanel = new JPanel(new BorderLayout(0, 3));
-	private final JLabel dryTitle = label("", ColorScheme.LIGHT_GRAY_COLOR);
+	// The header of the chances block: pressing it opens or closes the rows under it
+	private final JButton dryToggle = new JButton();
 	private final JPanel dryRows = new JPanel(new GridLayout(0, 1, 0, 2));
 
 	private int maxKills = DEFAULT_MAX_KILLS;
 	private boolean bossesLoaded;
 	private boolean bossesLoading;
 	private boolean hasRun;
+	// Closed until the player opens it, then as they left it for the runs that follow
+	private boolean dryOpen;
 	private String statusText = "";
 	private String siteUrl = LootSimApi.SITE;
 
-	LootSimPanel(LootSimApi api, Icons icons, Account account)
+	LootSimPanel(LootSimApi api, Icons icons, Account account, LootSimConfig config)
 	{
 		this.api = api;
 		this.icons = icons;
 		this.account = account;
+		this.config = config;
 		setLayout(new Stack(GAP));
 
 		JLabel title = label("OSRS Loot Sim", Color.WHITE);
@@ -104,9 +111,8 @@ final class LootSimPanel extends PluginPanel
 		title.setIconTextGap(6);
 		addRow(title);
 
-		levelLabel.setIcon(new ImageIcon(ImageUtil.loadImageResource(LootSimPanel.class, "looting.png")));
-		levelLabel.setIconTextGap(6);
 		JPanel levelText = clear(new JPanel(new BorderLayout(6, 0)));
+		levelText.add(skillIcon, BorderLayout.WEST);
 		levelText.add(levelLabel, BorderLayout.CENTER);
 		levelText.add(gainLabel, BorderLayout.EAST);
 		clear(levelPanel);
@@ -177,12 +183,21 @@ final class LootSimPanel extends PluginPanel
 		lootPanel.setVisible(false);
 		addRow(lootPanel);
 
+		dryToggle.setFont(SMALL);
+		dryToggle.setFocusPainted(false);
+		dryToggle.setHorizontalAlignment(SwingConstants.LEFT);
+		dryToggle.setIconTextGap(8);
+		dryToggle.setBackground(HEADER_COLOR);
+		dryToggle.setForeground(Color.WHITE);
+		dryToggle.setBorder(BorderFactory.createEmptyBorder(5, 8, 5, 8));
+		dryToggle.addActionListener(e -> showChances(!dryOpen));
 		clear(dryRows);
 		clear(dryPanel);
-		dryPanel.add(dryTitle, BorderLayout.NORTH);
+		dryPanel.add(dryToggle, BorderLayout.NORTH);
 		dryPanel.add(dryRows, BorderLayout.CENTER);
 		dryPanel.setVisible(false);
 		addRow(dryPanel);
+		showChances(false);
 
 		JButton siteLink = new JButton("Open on osrslootsim.com");
 		siteLink.setFont(SMALL);
@@ -196,6 +211,7 @@ final class LootSimPanel extends PluginPanel
 
 		bossChanged();
 		showLevel(0);
+		dressIcon();
 	}
 
 	@Override
@@ -203,6 +219,46 @@ final class LootSimPanel extends PluginPanel
 	{
 		loadBosses();
 		showLevel(0);
+		dressIcon();   // the date may have moved into or out of a holiday since the panel was last open
+		skillIcon.play(true);
+	}
+
+	@Override
+	public void onDeactivate()
+	{
+		skillIcon.play(false);
+	}
+
+	/**
+	 * One of the plugin's settings changed.
+	 */
+	void settingsChanged()
+	{
+		dressIcon();
+	}
+
+	SkillIcon skillIcon()
+	{
+		return skillIcon;
+	}
+
+	/**
+	 * Opens or closes the list of chances: every rare drop of the boss, with the chance of having seen it by now.
+	 */
+	void showChances(boolean open)
+	{
+		dryOpen = open;
+		dryToggle.setIcon(new Chevron(open));
+		dryToggle.setToolTipText(open ? "Hide the list" : "Show your chance of each rare drop by now");
+		dryRows.setVisible(open);
+		revalidate();
+		repaint();
+	}
+
+	private void dressIcon()
+	{
+		skillIcon.set(config.holidayIcon() ? Season.on(LocalDate.now()) : Season.NONE, config.animatedIcon());
+		revalidate();
 	}
 
 	/**
@@ -297,7 +353,7 @@ final class LootSimPanel extends PluginPanel
 		{
 			dryRows.add(dryRow(dry));
 		}
-		dryTitle.setText("Chance by " + Text.number(run.kills) + " " + unit);
+		dryToggle.setText("Chance by " + Text.number(run.kills) + " " + unit + " (" + run.dry.size() + ")");
 		dryPanel.setVisible(!run.dry.isEmpty());
 
 		siteUrl = run.url != null && run.url.startsWith(LootSimApi.SITE + "/") ? run.url : LootSimApi.SITE;
