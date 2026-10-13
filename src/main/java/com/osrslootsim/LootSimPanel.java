@@ -51,7 +51,8 @@ final class LootSimPanel extends PluginPanel
 	private static final List<String> USUAL = Arrays.asList(LootSimConfig.FIRST_PINS.split(","));
 	private static final int COLUMNS = 5;
 	private static final int MAX_CELLS = 50;
-	private static final int DEFAULT_MAX_KILLS = 1000;
+	// The most kills in one run until the site says how many it takes
+	private static final int DEFAULT_MAX_KILLS = 10_000;
 	// The least time between two runs. The site allows 20 a minute, so a row of fast presses would be turned away.
 	private static final int COOLDOWN_MS = 3000;
 	private static final int GAP = 7;
@@ -322,6 +323,14 @@ final class LootSimPanel extends PluginPanel
 	BossPicker picker()
 	{
 		return picker;
+	}
+
+	/**
+	 * Puts a number in the kills box as if it was typed. For the panel preview.
+	 */
+	void typeKills(String kills)
+	{
+		killsField.setText(kills);
 	}
 
 	List<String> pins()

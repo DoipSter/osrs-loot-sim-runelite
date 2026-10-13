@@ -35,7 +35,7 @@ tasks.withType(JavaCompile).configureEach {
 //   gradlew panelPreview -Pout=build/panel.png -Papi=http://127.0.0.1:8777 -Psite=../osrs-loot-sim -Pboss=cox -Pset=cm:1,team:3
 // api: where the simulator answers. site: a checkout of the website, for stand-in item and boss pictures (optional).
 // boss: what to type in the boss box before the run; the first match is picked (optional). set: choices for that
-// boss's options row (optional).
+// boss's options row (optional). kills: what to type in the kills box, -Pkills=10000 (optional; 100 otherwise).
 // Draws the insane-drop card and loot beam to a PNG:
 //   gradlew cardPreview -Pout=build/cards.png -Psprite=<an item's picture file> -Pseason=halloween -Pglow=purple
 tasks.register('cardPreview', JavaExec) {
@@ -54,7 +54,8 @@ tasks.register('panelPreview', JavaExec) {
 		project.findProperty('api') ?: 'https://osrslootsim.com',
 		project.findProperty('site') ?: '',
 		project.findProperty('boss') ?: '',
-		project.findProperty('set') ?: ''
+		project.findProperty('set') ?: '',
+		project.findProperty('kills') ?: ''
 	]
 }
 

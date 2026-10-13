@@ -72,7 +72,7 @@ public interface LootSimConfig extends Config
 	)
 	default boolean insaneDropCard()
 	{
-		return true;
+		return false;
 	}
 
 	@ConfigItem(
@@ -97,7 +97,7 @@ public interface LootSimConfig extends Config
 	)
 	default boolean insaneDropBurst()
 	{
-		return true;
+		return false;
 	}
 
 	@ConfigItem(

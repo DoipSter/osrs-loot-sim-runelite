@@ -102,8 +102,13 @@ public final class PanelPreview
 		});
 		Thread.sleep(1500);   // the boss's options row
 		String wantedSettings = args.length > 4 ? args[4] : "";
+		String wantedKills = args.length > 5 ? args[5] : "";
 		SwingUtilities.invokeAndWait(() ->
 		{
+			if (!wantedKills.isEmpty())
+			{
+				panel.typeKills(wantedKills);
+			}
 			for (String one : wantedSettings.split(","))
 			{
 				String[] parts = one.split(":");
